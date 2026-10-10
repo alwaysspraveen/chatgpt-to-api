@@ -10,13 +10,25 @@ export function contentText(content) {
   return '';
 }
 
-// image_url parts of a message (data: URLs or http(s) URLs).
-export function imageUrls(m) {
+// Attachments in a message: images and files, as { kind, src, filename }.
+//   {type: "image_url", image_url: {url}}            (also "input_image")
+//   {type: "file", file: {file_data, filename}}      (also "input_file"; file_data
+//                                                     may be a data: URL, raw base64 or http(s) URL)
+export function attachmentRefs(m) {
   if (!Array.isArray(m?.content)) return [];
-  return m.content
-    .filter((p) => p?.type === 'image_url')
-    .map((p) => (typeof p.image_url === 'string' ? p.image_url : p.image_url?.url))
-    .filter((u) => typeof u === 'string' && u.length > 0);
+  const refs = [];
+  for (const part of m.content) {
+    if (part?.type === 'image_url' || part?.type === 'input_image') {
+      const src = typeof part.image_url === 'string' ? part.image_url : part.image_url?.url;
+      if (typeof src === 'string' && src) refs.push({ kind: 'image', src, filename: null });
+    } else if (part?.type === 'file' || part?.type === 'input_file') {
+      const f = part.type === 'file' ? part.file || {} : part;
+      if (f.file_id && !f.file_data) refs.push({ kind: 'file_id', src: f.file_id, filename: f.filename || null });
+      const src = f.file_data || f.file_url || f.url;
+      if (typeof src === 'string' && src) refs.push({ kind: 'file', src, filename: f.filename || null });
+    }
+  }
+  return refs;
 }
 
 export function parseArgs(args) {
@@ -56,8 +68,8 @@ function renderMessage(m, names) {
   const text = contentText(m.content);
   switch (m.role) {
     case 'user': {
-      const n = imageUrls(m).length;
-      return `USER:\n${text}${n ? `\n[${n} image${n > 1 ? 's' : ''} attached]` : ''}`;
+      const n = attachmentRefs(m).length;
+      return `USER:\n${text}${n ? `\n[${n} attachment${n > 1 ? 's' : ''}]` : ''}`;
     }
     case 'assistant': {
       const parts = [text, m.tool_calls?.length ? renderToolCalls(m.tool_calls) : ''].filter(Boolean);

@@ -21,7 +21,7 @@ The extension types each prompt into a real chatgpt.com tab, clicks Send, reads 
 - **Tool / function calling:** emulated by prompting ChatGPT, then parsed into real `tool_calls`. Works with the OpenAI SDK, LiteLLM and other OpenAI-compatible clients.
 - **Automatic agent sessions:** each conversation history maps to its own ChatGPT chat, and only new messages are typed
 - **Parallel workers:** every open chatgpt.com tab handles one request at a time
-- **Images in:** `image_url` parts (data URLs or http(s) URLs), uploaded into the ChatGPT message box
+- **Files and images in:** PDFs, Word, Excel, PowerPoint, CSV, text, code, images and more, sent inline (`file` / `image_url` parts) or uploaded first with the OpenAI **Files API** (`/v1/files`), then uploaded into the ChatGPT message box
 - **Request parameters:** `max_tokens`, `stop`, `n`, `model` and `reasoning_effort` are enforced; `temperature`, `top_p` and the penalties are approximated; `seed`, `logprobs` and the rest are accepted (see [Parameters](#parameters))
 - **JSON mode:** `response_format` `json_object` / `json_schema`
 - **Streaming:** plain text streams as it renders, even when tools are enabled
@@ -40,7 +40,7 @@ The extension types each prompt into a real chatgpt.com tab, clicks Send, reads 
 4. [Where you can use it](#where-you-can-use-it)
 5. [Which ChatGPT chat a request goes to](#which-chatgpt-chat-a-request-goes-to)
 6. [How tool calling works](#how-tool-calling-works)
-7. [API docs](#api-docs) (including [Parameters](#parameters) and [Images](#images))
+7. [API docs](#api-docs) (including [Parameters](#parameters) and [Files and images](#files-and-images))
 8. [Configuration](#configuration)
 9. [Runbook](#runbook)
 10. [Troubleshooting](#troubleshooting)
@@ -274,7 +274,10 @@ Base URL: `http://127.0.0.1:8765`. Every `/v1/*` endpoint requires the header `A
 |---|---|---|---|
 | `GET` | `/health` | no | Bridge status |
 | `GET` | `/v1/models` | yes | List models |
-| `POST` | `/v1/chat/completions` | yes | Chat (streaming or not, with tools and JSON mode) |
+| `POST` | `/v1/chat/completions` | yes | Chat (streaming or not, with tools, JSON mode, files and images) |
+| `POST` | `/v1/files` | yes | Upload a file, get a `file_id` (OpenAI Files API) |
+| `GET` | `/v1/files`, `/v1/files/{id}`, `/v1/files/{id}/content` | yes | List / metadata / download |
+| `DELETE` | `/v1/files/{id}` | yes | Delete an uploaded file |
 
 ### `GET /health`
 
@@ -304,7 +307,7 @@ curl http://127.0.0.1:8765/health
 
 | Field | Type | Notes |
 |---|---|---|
-| `messages` | array, **required** | Roles: `system`, `developer`, `user`, `assistant` (may include `tool_calls`), `tool` (with `tool_call_id`). `content` can be a string or parts: `{type:"text"}` and `{type:"image_url"}` (see [Images](#images)). The last message can't be `assistant`. |
+| `messages` | array, **required** | Roles: `system`, `developer`, `user`, `assistant` (may include `tool_calls`), `tool` (with `tool_call_id`). `content` can be a string or parts: `text`, `image_url`, `file` (see [Files and images](#files-and-images)). The last message can't be `assistant`. |
 | `model` | string | `chatgpt-web` = whatever is selected in the tab. Any other ChatGPT slug (e.g. `gpt-5`) opens **new** chats on that model. Echoed back. |
 | `stream` | bool | Server-sent events in the OpenAI chunk format |
 | `stream_options.include_usage` | bool | Adds a final usage chunk |
@@ -339,35 +342,126 @@ The ChatGPT web app has no sampling controls, so each parameter is either **enfo
 
 Out-of-range values (e.g. `temperature: 5`, `n: 9`, `stop: [1]`) return `400` with a message.
 
-#### Images
+#### Files and images
 
-Send images as OpenAI `image_url` content parts. They're uploaded into ChatGPT's message box (pasted, or through the file input as a fallback) before the text is sent.
+Attach any file ChatGPT accepts: **PDF, Word, Excel, PowerPoint, CSV, TXT, Markdown, JSON, code files, images** and more. The extension uploads them into ChatGPT's message box (by paste, then drag-and-drop, then the file picker as a fallback) and waits for the upload to finish before sending.
+
+**Option A: inline in the message** (simplest)
 
 ```json
 {
   "messages": [{
     "role": "user",
     "content": [
-      { "type": "text", "text": "What's in this picture?" },
+      { "type": "text", "text": "Summarize the report and describe the chart." },
+      { "type": "file", "file": { "filename": "report.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQK…" } },
       { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0KGgo…" } }
     ]
   }]
 }
 ```
 
-- **Accepted:** `data:image/*;base64,…` URLs, or `http(s)://` URLs, which the server downloads (20 s timeout, must be `image/*`, at most 20 MB). Other schemes return `400`.
-- **Limits:** up to 10 images per request (the most recent ones are kept), and a 50 MB request body.
-- **In sessions:** only images in *new* messages are uploaded, since earlier ones are already in the chat. A new chat gets every image from the history.
-- **Output:** text only. Image generation isn't supported (and the plain-text rule asks ChatGPT not to generate images).
+| Part | Accepted values |
+|---|---|
+| `{"type": "file", "file": {"filename", "file_data"}}` | `file_data` = `data:<mime>;base64,…`, **raw base64** (the type is guessed from `filename`), or an `http(s)://` URL to download |
+| `{"type": "file", "file": {"file_id"}}` | An id from `POST /v1/files` (option B) |
+| `{"type": "image_url", "image_url": {"url"}}` | `data:image/*;base64,…` or an `http(s)://` image URL |
+| `input_file` / `input_image` | Same as above (newer part names some SDKs use) |
 
+**Option B: upload first, then reference it** (OpenAI Files API, used automatically by Google ADK / LiteLLM)
+
+```bash
+curl http://127.0.0.1:8765/v1/files -H "Authorization: Bearer $API_KEY" \
+  -F purpose=user_data -F file=@report.pdf
+# → {"id": "file-6a1f…", "object": "file", "bytes": 48213, "filename": "report.pdf", ...}
+```
+```json
+{ "messages": [{ "role": "user", "content": [
+    { "type": "text", "text": "Summarize this." },
+    { "type": "file", "file": { "file_id": "file-6a1f…" } }
+] }] }
+```
+
+Uploaded files are kept **in memory for 24 hours** (up to 200 files). They're cleared when the server restarts.
+
+**Limits and behaviour**
+- Up to **10 attachments** per request, **25 MB** each, and a **100 MB** request body
+- In a continuing chat, only attachments in the **new** message are uploaded, since earlier ones are already in the chat
+- Output is text only: no image or file generation
+
+**curl recipes**
+
+Load the key first: `API_KEY=$(grep '^API_KEY=' server/.env | cut -d= -f2)`
+
+*Upload first, then ask* (any size up to 25 MB):
+```bash
+FILE_ID=$(curl -s http://127.0.0.1:8765/v1/files \
+  -H "Authorization: Bearer $API_KEY" \
+  -F purpose=user_data -F file=@report.pdf \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+
+curl http://127.0.0.1:8765/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{"new_chat": true, "messages": [{"role": "user", "content": [
+        {"type": "text", "text": "Summarize this document in 5 bullet points."},
+        {"type": "file", "file": {"file_id": "'"$FILE_ID"'"}}]}]}'
+```
+
+*Inline, single request* (small files):
+```bash
+curl http://127.0.0.1:8765/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{"new_chat": true, "messages": [{"role": "user", "content": [
+        {"type": "text", "text": "Summarize this document."},
+        {"type": "file", "file": {"filename": "report.pdf",
+          "file_data": "data:application/pdf;base64,'"$(base64 -i report.pdf)"'"}}]}]}'
+```
+
+*Inline, large files.* Build the body in a file, since big base64 doesn't fit on a command line:
+```bash
+python3 - report.pdf <<'PY' > /tmp/req.json
+import base64, json, mimetypes, sys
+p = sys.argv[1]
+mime = mimetypes.guess_type(p)[0] or "application/octet-stream"
+data = base64.b64encode(open(p, "rb").read()).decode()
+print(json.dumps({"new_chat": True, "messages": [{"role": "user", "content": [
+    {"type": "text", "text": "Summarize this document."},
+    {"type": "file", "file": {"filename": p.split("/")[-1], "file_data": f"data:{mime};base64,{data}"}}]}]}))
+PY
+curl http://127.0.0.1:8765/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  --data-binary @/tmp/req.json
+```
+
+*Manage uploads:*
+```bash
+curl -s http://127.0.0.1:8765/v1/files -H "Authorization: Bearer $API_KEY"                      # list
+curl -s http://127.0.0.1:8765/v1/files/$FILE_ID/content -H "Authorization: Bearer $API_KEY" -o out.pdf  # download
+curl -s -X DELETE http://127.0.0.1:8765/v1/files/$FILE_ID -H "Authorization: Bearer $API_KEY"   # delete
+```
+
+*Several files at once:* add more `file` / `image_url` parts to `content`, up to 10.
+
+**Postman**
+1. **Upload:** `POST http://127.0.0.1:8765/v1/files`, header `Authorization: Bearer <key>`, **Body → form-data**: key `purpose` (Text) = `user_data`, key `file` (switch the type to **File**) = pick your file. Copy the `id` from the response.
+2. **Ask:** `POST http://127.0.0.1:8765/v1/chat/completions`, **Body → raw → JSON**, with the `file_id` request from above.
+
+**Python (OpenAI SDK)**
 ```python
 import base64
 from openai import OpenAI
 client = OpenAI(base_url="http://127.0.0.1:8765/v1", api_key=KEY)
-img = base64.b64encode(open("photo.jpg", "rb").read()).decode()
+
+pdf = base64.b64encode(open("report.pdf", "rb").read()).decode()
 r = client.chat.completions.create(model="chatgpt-web", messages=[{"role": "user", "content": [
-    {"type": "text", "text": "Describe this image."},
-    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}},
+    {"type": "text", "text": "Summarize this report in 5 bullets."},
+    {"type": "file", "file": {"filename": "report.pdf", "file_data": f"data:application/pdf;base64,{pdf}"}},
+]}])
+
+# or upload first
+f = client.files.create(file=open("report.pdf", "rb"), purpose="user_data")
+r = client.chat.completions.create(model="chatgpt-web", messages=[{"role": "user", "content": [
+    {"type": "text", "text": "Summarize this."}, {"type": "file", "file": {"file_id": f.id}},
 ]}])
 ```
 
@@ -498,14 +592,14 @@ All errors look like `{"error": {"message": "...", "type": "..."}}`.
 
 | Status | `type` | When |
 |---|---|---|
-| `400` | `invalid_request_error` | Missing or empty `messages`, last message is `assistant`, bad `conversation_id`, `conversation_id` combined with `new_chat`, out-of-range parameters, an image that can't be loaded, audio, invalid JSON |
+| `400` | `invalid_request_error` | Missing or empty `messages`, last message is `assistant`, bad `conversation_id`, `conversation_id` combined with `new_chat`, out-of-range parameters, an image or file that can't be loaded, unknown `file_id`, audio, invalid JSON |
 | `401` | `authentication_error` | Missing or wrong API key |
 | `404` | `invalid_request_error` | Unknown path |
-| `413` | `invalid_request_error` | Body over 50 MB |
+| `413` | `invalid_request_error` | Body over 100 MB |
 | `502` | `upstream_error` | Failure in the tab: selector timeout, cancelled, ChatGPT didn't reply, or the job timed out |
 | `503` | `service_unavailable` | Extension not connected, or no chatgpt.com tab open |
 
-Tab errors include page diagnostics, e.g. `Timed out waiting for prompt input | script=v14-codeblocks url=/ editors=[…] …`.
+Tab errors include page diagnostics, e.g. `Timed out waiting for prompt input | script=v15-files url=/ editors=[…] …`.
 
 ---
 
@@ -520,6 +614,7 @@ Settings live in **`server/.env`**, which `start.bash` creates on first run and 
 | `HOST` | `127.0.0.1` | Keep it on localhost |
 | `JOB_TIMEOUT_MS` | `600000` | Max time per request, including time waiting in the queue |
 | `PLAIN_TEXT` | `1` | `0` turns off the "no widgets / plain text" rule |
+| `SESSIONS_FILE` | `server/sessions.json` | Where sessions are saved |
 | `REPLAY_HISTORY` | `0` | `1` pastes earlier turns into new chats (by default only the latest message is typed) |
 
 The extension's server URL can be changed under **popup → Settings**. The default is `ws://127.0.0.1:8765/bridge`.
@@ -553,7 +648,7 @@ The extension's server URL can be changed under **popup → Settings**. The defa
 | `extension/popup.*` | No. Reopen the popup. |
 | `server/**` | No. Restart the server. |
 
-Errors from the tab start with `script=<version>` (for example `script=v14-codeblocks`), so you can confirm which content-script version is running.
+Errors from the tab start with `script=<version>` (for example `script=v15-files`), so you can confirm which content-script version is running.
 
 ---
 
@@ -648,7 +743,7 @@ Edit `API_KEY` in `server/.env`, run `./stop.bash && ./start.bash`, and update e
 | **Replies include widget or card text** | Apply the recommended ChatGPT settings. Keep `PLAIN_TEXT=1`. |
 | **"You've reached your limit" in ChatGPT** | You've hit your plan's message limit. Wait, or switch the tab to another model. Reduce agent loops and parallel tabs. |
 | **"Port 8765 is already in use"** | Run `./stop.bash`. If something else owns the port (`lsof -iTCP:8765 -sTCP:LISTEN`), set `PORT=8766` in `server/.env` and update popup → Settings. |
-| **`Could not attach images` / `Timed out waiting for image upload`** | ChatGPT's attachment area changed, or the upload failed. Check the image in the tab, then send the outerHTML of the message box so the `attachments` selector can be updated. |
+| **`Could not attach files` / `Timed out waiting for file upload to finish`** | ChatGPT's attachment area changed, the file type isn't accepted, or the upload failed. Check the file in the tab, then send the outerHTML of the message box so the `attachments` selector can be updated. |
 | **Popup shows old behaviour or errors show an old `script=` version** | Reload the extension, then reload each chatgpt.com tab |
 
 ---
@@ -674,6 +769,7 @@ server/
   server.js          HTTP API, bridge WebSocket, job queue / tab scheduling
   lib/prompt.js      messages → ChatGPT prompt, tool-call emulation, reply parsing
   lib/sessions.js    history → ChatGPT chat mapping (automatic sessions)
+  lib/files.js       /v1/files store and multipart parser
 extension/
   manifest.json      MV3 manifest
   background.js      server connection, tab worker pool, keepalive
@@ -691,7 +787,7 @@ curl-examples.sh     ready-made curl requests
 - Slower than the real API: roughly 3–60 s per call, depending on reply length
 - One request per tab. More tabs mean more parallelism, and more load on your account.
 - No real sampling controls (temperature, top_p, seed and logprobs are approximated or ignored) or exact token counts
-- Images in only (no image output); no files or audio
+- Files and images in only (no image or file output); no audio
 - Tool calling depends on ChatGPT following the prompt format
 - Breaks whenever ChatGPT changes its page layout, until the selectors are updated
 - ChatGPT plan message limits apply, and heavy automated use risks account action

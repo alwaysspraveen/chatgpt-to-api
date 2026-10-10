@@ -3,7 +3,7 @@
 // extend a known history continues that chat and only types the new messages.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { contentText, imageUrls, parseArgs } from './prompt.js';
+import { attachmentRefs, contentText, parseArgs } from './prompt.js';
 
 function sortKeys(v) {
   if (Array.isArray(v)) return v.map(sortKeys);
@@ -15,8 +15,8 @@ function sortKeys(v) {
 function canonical(m) {
   const role = m.role === 'developer' ? 'system' : m.role;
   const calls = (m.tool_calls || []).map((c) => [c.function?.name, sortKeys(parseArgs(c.function?.arguments))]);
-  const images = imageUrls(m).map((u) => crypto.createHash('sha256').update(u).digest('hex'));
-  return JSON.stringify([role, contentText(m.content).trim(), calls, images]);
+  const files = attachmentRefs(m).map((r) => crypto.createHash('sha256').update(`${r.kind}:${r.src}`).digest('hex'));
+  return JSON.stringify([role, contentText(m.content).trim(), calls, files]);
 }
 
 // hashes[k] identifies messages[0..k] (inclusive).

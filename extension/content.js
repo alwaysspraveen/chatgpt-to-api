@@ -14,7 +14,7 @@ const SELECTORS = {
   uploading: '[role="progressbar"], .animate-spin, [aria-busy="true"]',
 };
 
-const SCRIPT_VERSION = 'v14-codeblocks';
+const SCRIPT_VERSION = 'v15-files';
 const POLL_MS = 150;
 const STABLE_POLLS = 10; // fallback: ~1.5s with no change and no stop button => done
 const FAST_STABLE_POLLS = 2; // once ChatGPT signals it's finished, confirm briefly
@@ -168,34 +168,53 @@ function attachmentCount() {
   return Math.max(box.querySelectorAll('img').length, box.children.length);
 }
 
-function toFile(img, i) {
-  const bin = atob(img.data);
+function toFile(f, i) {
+  const bin = atob(f.data);
   const bytes = new Uint8Array(bin.length);
   for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
-  const ext = (img.mime.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/\+.*/, '');
-  return new File([bytes], `${img.name || `image-${i + 1}`}.${ext}`, { type: img.mime });
+  return new File([bytes], f.name || `file-${i + 1}`, { type: f.mime || 'application/octet-stream' });
 }
 
-// Paste the images into the composer (falls back to the hidden file input),
-// then wait until ChatGPT has finished uploading them.
-async function attachImages(input, images) {
-  if (!images?.length) return;
-  const dt = new DataTransfer();
-  images.map(toFile).forEach((f) => dt.items.add(f));
-  const target = attachmentCount() + images.length;
+// Uploads images and files into the composer, trying the same routes a user
+// would: paste, then drag-and-drop, then the hidden file picker. Then waits
+// until ChatGPT has finished uploading/processing them.
+async function attachFiles(input, files) {
+  if (!files?.length) return;
+  const make = () => {
+    const dt = new DataTransfer();
+    files.map(toFile).forEach((f) => dt.items.add(f));
+    return dt;
+  };
+  const target = attachmentCount() + files.length;
+  const attached = (ms) => waitFor(() => attachmentCount() >= target, ms, 'files to attach').then(() => true, () => false);
 
   input.focus();
-  input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-  const pasted = await waitFor(() => attachmentCount() >= target, 4_000, 'images to attach').then(() => true, () => false);
-  if (!pasted) {
-    const fileInput = $$('input[type="file"]').find((el) => !el.accept || /image/.test(el.accept));
-    if (!fileInput) throw new Error(`Could not attach images | ${pageDiagnostics()}`);
-    fileInput.files = dt.files;
+  input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: make(), bubbles: true, cancelable: true }));
+  let ok = await attached(3_000);
+
+  if (!ok) {
+    const dt = make();
+    const zone = input.closest('form') || input;
+    for (const type of ['dragenter', 'dragover', 'drop']) {
+      zone.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }
+    ok = await attached(3_000);
+  }
+
+  if (!ok) {
+    const onlyImages = files.every((f) => (f.mime || '').startsWith('image/'));
+    const inputs = $$('input[type="file"]');
+    const fileInput = inputs.find((el) => !el.accept)
+      || (onlyImages && inputs.find((el) => /image/.test(el.accept)))
+      || inputs[0];
+    if (!fileInput) throw new Error(`Could not attach files | ${pageDiagnostics()}`);
+    fileInput.files = make().files;
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-    await waitFor(() => attachmentCount() >= target, 15_000, 'images to attach');
+    ok = await attached(15_000);
+    if (!ok) throw new Error(`Could not attach files | ${pageDiagnostics()}`);
   }
   await sleep(500);
-  await waitFor(() => !attachmentBox()?.querySelector(SELECTORS.uploading), 120_000, 'image upload to finish');
+  await waitFor(() => !attachmentBox()?.querySelector(SELECTORS.uploading), 180_000, 'file upload to finish');
 }
 
 // ChatGPT's "Think" toggle in the composer (used for reasoning_effort).
@@ -234,7 +253,7 @@ async function startNewChat() {
 }
 
 // --- Job ---------------------------------------------------------------------
-async function runJob({ id, text, newChat, conversationId, images, maxChars, stop, think }) {
+async function runJob({ id, text, newChat, conversationId, files, maxChars, stop, think }) {
   if (current) throw new Error('ChatGPT tab is busy with another request');
   current = { id, cancelled: false };
   const job = current;
@@ -259,12 +278,12 @@ async function runJob({ id, text, newChat, conversationId, images, maxChars, sto
     if (newChat) setThink(think);
     const before = new Set($$(SELECTORS.assistant));
     const newReply = () => visible(SELECTORS.assistant).filter((el) => !before.has(el)).at(-1) || null;
-    await attachImages(input, images);
+    await attachFiles(input, files);
     if (text) insertPrompt(input, text);
 
-    // With images, the send button stays disabled until uploads settle.
+    // With attachments, the send button stays disabled until uploads settle.
     mark('typed');
-    await submit(input, images?.length ? 30_000 : 500);
+    await submit(input, files?.length ? 60_000 : 500);
     mark('sent');
     report({ type: 'phase', id, phase: 'waiting' });
 

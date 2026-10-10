@@ -1,17 +1,19 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
-import { applyLimits, buildContinuation, buildFullPrompt, contentText, estimateTokens, imageUrls, parseReply, toolsActive } from './lib/prompt.js';
+import { applyLimits, attachmentRefs, buildContinuation, buildFullPrompt, contentText, estimateTokens, parseReply, toolsActive } from './lib/prompt.js';
 import { SessionStore } from './lib/sessions.js';
+import { FileStore, parseMultipart } from './lib/files.js';
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8765);
 const API_KEY = process.env.API_KEY || `sk-local-${crypto.randomBytes(18).toString('hex')}`;
 const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS || 10 * 60 * 1000);
-const MAX_BODY_BYTES = 50 * 1024 * 1024; // images arrive base64-encoded
+const MAX_BODY_BYTES = 100 * 1024 * 1024; // files and images arrive base64-encoded
 const MODEL_ID = 'chatgpt-web';
 
-const sessions = new SessionStore({ file: new URL('./sessions.json', import.meta.url).pathname });
+const fileStore = new FileStore();
+const sessions = new SessionStore({ file: process.env.SESSIONS_FILE || new URL('./sessions.json', import.meta.url).pathname });
 
 // ---------------------------------------------------------------------------
 // Bridge: one extension connection; each open chatgpt.com tab is a worker,
@@ -48,7 +50,7 @@ function pump() {
     job.t.sent = Date.now();
     send(bridge, {
       type: 'job', id: job.id, text: job.text, newChat: job.newChat, conversationId: job.conversationId,
-      images: job.images, maxChars: job.maxChars, stop: job.stop,
+      files: job.files, maxChars: job.maxChars, stop: job.stop,
       // Model and Think mode can only be chosen when a chat starts.
       think: job.newChat ? job.think : null, model: job.newChat ? job.chatModel : null,
     });
@@ -69,7 +71,7 @@ function finish(id, err, result) {
     console.log(`[job] session chat ${job.conversationId} unavailable, retrying in a new chat`);
     Object.assign(job, {
       mode: 'new (fallback)', newChat: true, conversationId: null,
-      text: job.fallbackText, images: job.fallbackImages || [], fallbackText: null,
+      text: job.fallbackText, files: job.fallbackFiles || [], fallbackText: null,
     });
     delete job.t.sent;
     queue.unshift(job);
@@ -142,7 +144,7 @@ function authorized(req) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function readBody(req) {
+function readBody(req, { raw = false } = {}) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
@@ -155,7 +157,7 @@ function readBody(req) {
         chunks.push(c);
       }
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => resolve(raw ? Buffer.concat(chunks) : Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 }
@@ -222,36 +224,78 @@ function parseParams(body) {
 }
 
 // ---------------------------------------------------------------------------
-// Images: data: URLs are decoded, http(s) URLs fetched; then uploaded in the tab.
+// Attachments (images and files): data: URLs / base64 are decoded, http(s)
+// URLs downloaded; the extension then uploads them into the ChatGPT composer.
 // ---------------------------------------------------------------------------
-const MAX_IMAGES = 10;
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_ATTACHMENTS = 10;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MIME_BY_EXT = {
+  pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown', csv: 'text/csv', json: 'application/json',
+  html: 'text/html', xml: 'application/xml', py: 'text/x-python', js: 'text/javascript', ts: 'text/plain',
+  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', zip: 'application/zip',
+};
+const EXT_BY_MIME = Object.fromEntries(Object.entries(MIME_BY_EXT).map(([e, m]) => [m, e]));
+const extOf = (name) => (name?.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase();
 
-async function resolveImage(url) {
-  const data = url.match(/^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/=\s]+)$/);
-  if (data) return { mime: data[1], data: data[2].replace(/\s/g, '') };
-  if (!/^https?:\/\//i.test(url)) throw new Error('Images must be data:image/... base64 URLs or http(s) URLs');
-  let resp;
-  try {
-    resp = await fetch(url, { signal: AbortSignal.timeout(20_000), redirect: 'follow' });
-  } catch (err) {
-    throw new Error(`Could not download image: ${err.message}`);
-  }
-  if (!resp.ok) throw new Error(`Could not download image: HTTP ${resp.status}`);
-  const mime = (resp.headers.get('content-type') || '').split(';')[0].trim();
-  if (!mime.startsWith('image/')) throw new Error(`URL is not an image (content-type ${mime || 'unknown'})`);
-  const buf = Buffer.from(await resp.arrayBuffer());
-  if (buf.length > MAX_IMAGE_BYTES) throw new Error('Image is larger than 20 MB');
-  return { mime, data: buf.toString('base64') };
+// Keeps file names safe for the browser's File object.
+function safeName(name, mime, fallback) {
+  const base = String(name || fallback).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 120);
+  return extOf(base) ? base : `${base}.${EXT_BY_MIME[mime] || (mime.split('/')[1] || 'bin').replace(/[^\w]/g, '')}`;
 }
 
-const imagesOf = (messages) => messages.flatMap(imageUrls).slice(-MAX_IMAGES);
-// Images for a new chat: only those in the messages that actually get typed.
-const newChatImages = (messages) => {
-  if (process.env.REPLAY_HISTORY === '1') return imagesOf(messages);
+async function download(url, what) {
+  let resp;
+  try {
+    resp = await fetch(url, { signal: AbortSignal.timeout(30_000), redirect: 'follow' });
+  } catch (err) {
+    throw new Error(`Could not download ${what}: ${err.message}`);
+  }
+  if (!resp.ok) throw new Error(`Could not download ${what}: HTTP ${resp.status}`);
+  const buf = Buffer.from(await resp.arrayBuffer());
+  if (buf.length > MAX_FILE_BYTES) throw new Error(`${what} is larger than 25 MB`);
+  const mime = (resp.headers.get('content-type') || '').split(';')[0].trim() || 'application/octet-stream';
+  const urlName = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+  return { mime, data: buf.toString('base64'), urlName };
+}
+
+async function resolveAttachment(ref, index) {
+  if (ref.kind === 'file_id') {
+    const f = fileStore.get(ref.src);
+    if (!f) throw new Error(`Unknown file_id "${ref.src}" (upload it with POST /v1/files first; files are kept 24 hours)`);
+    if (f.buffer.length > MAX_FILE_BYTES) throw new Error(`file "${f.filename}" is larger than 25 MB`);
+    return { mime: f.mime, data: f.buffer.toString('base64'), name: safeName(ref.filename || f.filename, f.mime, `file-${index + 1}`) };
+  }
+  const what = ref.kind === 'image' ? 'image' : `file${ref.filename ? ` "${ref.filename}"` : ''}`;
+  const fallback = `${ref.kind === 'image' ? 'image' : 'file'}-${index + 1}`;
+  const dataUrl = ref.src.match(/^data:([\w.+-]+\/[\w.+-]+)?(?:;[^,;]*)*;base64,([A-Za-z0-9+/=\s]*)$/);
+  let out;
+  if (dataUrl) {
+    out = { mime: dataUrl[1] || MIME_BY_EXT[extOf(ref.filename)] || 'application/octet-stream', data: dataUrl[2].replace(/\s/g, '') };
+  } else if (/^https?:\/\//i.test(ref.src)) {
+    const d = await download(ref.src, what);
+    out = { mime: d.mime, data: d.data, urlName: d.urlName };
+  } else if (ref.kind === 'file' && /^[A-Za-z0-9+/=\s]+$/.test(ref.src)) {
+    // Raw base64 (no data: prefix): infer the type from the file name.
+    out = { mime: MIME_BY_EXT[extOf(ref.filename)] || 'application/octet-stream', data: ref.src.replace(/\s/g, '') };
+  } else {
+    throw new Error(`Unsupported ${what}: use a data: URL, base64, or an http(s) URL`);
+  }
+  if (ref.kind === 'image' && !out.mime.startsWith('image/')) throw new Error(`URL is not an image (content-type ${out.mime})`);
+  if (Buffer.byteLength(out.data, 'base64') > MAX_FILE_BYTES) throw new Error(`${what} is larger than 25 MB`);
+  return { mime: out.mime, data: out.data, name: safeName(ref.filename || out.urlName, out.mime, fallback) };
+}
+
+const refKey = (r) => `${r.kind}:${r.src}`;
+const attachmentsOf = (messages) => messages.flatMap(attachmentRefs).slice(-MAX_ATTACHMENTS);
+// Attachments for a new chat: only those in the messages that actually get typed.
+const newChatAttachments = (messages) => {
+  if (process.env.REPLAY_HISTORY === '1') return attachmentsOf(messages);
   let lastAssistant = -1;
   messages.forEach((m, i) => { if (m.role === 'assistant') lastAssistant = i; });
-  return imagesOf(messages.slice(lastAssistant + 1));
+  return attachmentsOf(messages.slice(lastAssistant + 1));
 };
 
 // ---------------------------------------------------------------------------
@@ -271,7 +315,7 @@ function plan(body, opts, { allowSession = true } = {}) {
   if (conversationId && newChat) return { error: 'Use either `conversation_id` or `new_chat`, not both' };
 
   const fresh = () => ({
-    mode: 'new', newChat: true, conversationId: null, text: buildFullPrompt(messages, opts), imageUrls: newChatImages(messages),
+    mode: 'new', newChat: true, conversationId: null, text: buildFullPrompt(messages, opts), attachments: newChatAttachments(messages),
   });
   if (newChat || !allowSession) return fresh();
 
@@ -280,7 +324,7 @@ function plan(body, opts, { allowSession = true } = {}) {
     messages.forEach((m, i) => { if (m.role === 'assistant') lastAssistant = i; });
     const tail = messages.slice(lastAssistant + 1).filter((m) => m.role !== 'system' && m.role !== 'developer');
     if (tail.length === 0) return { error: 'Nothing new to send: the last message is from the assistant' };
-    return { mode: 'explicit', newChat: false, conversationId, text: buildContinuation(messages, tail, opts), imageUrls: imagesOf(tail) };
+    return { mode: 'explicit', newChat: false, conversationId, text: buildContinuation(messages, tail, opts), attachments: attachmentsOf(tail) };
   }
 
   const hit = sessions.match(messages);
@@ -289,8 +333,8 @@ function plan(body, opts, { allowSession = true } = {}) {
     const tail = messages.slice(hit.seen);
     return {
       mode: 'session', newChat: false, conversationId: hit.chatId,
-      text: buildContinuation(messages, tail, opts), imageUrls: imagesOf(tail),
-      fallbackText: buildFullPrompt(messages, opts), fallbackImageUrls: newChatImages(messages),
+      text: buildContinuation(messages, tail, opts), attachments: attachmentsOf(tail),
+      fallbackText: buildFullPrompt(messages, opts), fallbackAttachments: newChatAttachments(messages),
     };
   }
   return fresh();
@@ -325,7 +369,7 @@ async function chatCompletions(req, res) {
   for (let i = 0; i < n; i++) {
     const route = plan(body, opts, { allowSession: i === 0 });
     if (route.error) return apiError(res, 400, route.error);
-    if (!route.text.trim() && route.imageUrls.length === 0) return apiError(res, 400, 'No text or image content found in messages');
+    if (!route.text.trim() && route.attachments.length === 0) return apiError(res, 400, 'No text, image or file content found in messages');
     routes.push(route);
   }
   if (!bridge) {
@@ -335,15 +379,15 @@ async function chatCompletions(req, res) {
     return apiError(res, 503, 'No chatgpt.com tab is open in the browser.', 'service_unavailable');
   }
 
-  // Decode/download each distinct image once.
-  const images = new Map();
+  // Decode/download each distinct attachment once.
+  const resolved = new Map();
   try {
-    const urls = new Set(routes.flatMap((r) => [...r.imageUrls, ...(r.fallbackImageUrls || [])]));
-    await Promise.all([...urls].map(async (u) => images.set(u, await resolveImage(u))));
+    const refs = new Map(routes.flatMap((r) => [...r.attachments, ...(r.fallbackAttachments || [])]).map((r) => [refKey(r), r]));
+    await Promise.all([...refs.values()].map(async (r, i) => resolved.set(refKey(r), await resolveAttachment(r, i))));
   } catch (err) {
     return apiError(res, 400, err.message);
   }
-  const pick = (urls) => (urls || []).map((u, i) => ({ ...images.get(u), name: `image-${i + 1}` }));
+  const pick = (refs) => (refs || []).map((r) => resolved.get(refKey(r)));
 
   const id = `chatcmpl-${crypto.randomUUID()}`;
   const created = Math.floor(Date.now() / 1000);
@@ -357,8 +401,8 @@ async function chatCompletions(req, res) {
       id: n === 1 ? id : `${id}-${index}`,
       index,
       ...route,
-      images: pick(route.imageUrls),
-      fallbackImages: route.fallbackText ? pick(route.fallbackImageUrls) : null,
+      files: pick(route.attachments),
+      fallbackFiles: route.fallbackText ? pick(route.fallbackAttachments) : null,
       maxChars: opts.maxTokens ? opts.maxTokens * 4 : null,
       stop: opts.stop,
       think: params.think,
@@ -474,6 +518,35 @@ async function chatCompletions(req, res) {
 }
 
 // ---------------------------------------------------------------------------
+// /v1/files: upload, list, get, download, delete
+// ---------------------------------------------------------------------------
+async function filesApi(req, res, url) {
+  const [, , , id, sub] = url.pathname.split('/'); // '', 'v1', 'files', id?, 'content'?
+  if (!id && req.method === 'POST') {
+    const { fields, files } = parseMultipart(await readBody(req, { raw: true }), req.headers['content-type']);
+    const file = files.find((f) => f.name === 'file') || files[0];
+    if (!file) return apiError(res, 400, 'Missing `file` field (multipart/form-data)');
+    if (file.buffer.length > MAX_FILE_BYTES) return apiError(res, 400, 'File is larger than 25 MB');
+    const mime = (file.mime && file.mime !== 'application/octet-stream' ? file.mime : null)
+      || MIME_BY_EXT[extOf(file.filename)] || 'application/octet-stream';
+    return json(res, 200, fileStore.add({ filename: file.filename || 'upload', mime, buffer: file.buffer, purpose: fields.purpose || 'user_data' }));
+  }
+  if (!id && req.method === 'GET') return json(res, 200, { object: 'list', data: fileStore.list() });
+  const f = id && fileStore.get(id);
+  if (!f) return apiError(res, 404, `No such file: ${id || ''}`);
+  if (req.method === 'GET' && sub === 'content') {
+    res.writeHead(200, { 'Content-Type': f.mime, 'Content-Length': f.buffer.length });
+    return res.end(f.buffer);
+  }
+  if (req.method === 'GET' && !sub) return json(res, 200, fileStore.meta(id));
+  if (req.method === 'DELETE' && !sub) {
+    fileStore.delete(id);
+    return json(res, 200, { id, object: 'file', deleted: true });
+  }
+  return apiError(res, 404, 'Not found');
+}
+
+// ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
@@ -494,6 +567,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/v1/models') {
     return json(res, 200, { object: 'list', data: [{ id: MODEL_ID, object: 'model', created: 0, owned_by: 'local-bridge' }] });
+  }
+  if (url.pathname === '/v1/files' || url.pathname.startsWith('/v1/files/')) {
+    return filesApi(req, res, url).catch((err) => {
+      if (!res.headersSent) apiError(res, err.status || 500, err.message, err.status ? 'invalid_request_error' : 'server_error');
+    });
   }
   if (req.method === 'POST' && url.pathname === '/v1/chat/completions') {
     return chatCompletions(req, res).catch((err) => {
