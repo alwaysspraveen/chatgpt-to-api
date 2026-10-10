@@ -91,14 +91,52 @@ On first run, `start.bash` creates **`server/.env`** with a random `API_KEY`. Th
 
 To run it by hand instead: `cd server && npm install && API_KEY=sk-local-change-me npm start`. Without `API_KEY`, a new key is generated on every start.
 
-### 2. Load the extension
+### 2. Install the Chrome extension
 
-1. Open `chrome://extensions` and turn on **Developer mode**.
-2. Click **Load unpacked** and select the `extension/` folder.
-3. Open **https://chatgpt.com** and log in. Reload the tab if it was already open.
-4. Click the extension icon. The popup should show **READY**.
+The extension isn't in the Chrome Web Store. You load it straight from the `extension/` folder of this repo ("unpacked").
+
+**Get the code** (if you haven't already):
+```bash
+git clone https://github.com/alwaysspraveen/chatgpt-to-api.git
+cd chatgpt-to-api
+```
+
+**Load it:**
+
+1. Open the extensions page:
+   | Browser | Address |
+   |---|---|
+   | Chrome | `chrome://extensions` |
+   | Edge | `edge://extensions` |
+   | Brave | `brave://extensions` |
+2. Turn on **Developer mode**. The switch is at the top right in Chrome and Brave, and in the left sidebar in Edge.
+3. Click **Load unpacked**.
+4. Select the **`extension`** folder inside the repo, the one that contains `manifest.json`. Don't select the repo root.
+5. **ChatGPT API Bridge** appears in the list. Make sure its switch is **on**.
+6. **Pin the icon:** click the puzzle-piece icon in the toolbar, then the pin next to **ChatGPT API Bridge**. The badge on the icon shows the status at a glance.
+
+**Connect it:**
+
+7. Start the server (`./start.bash`, step 1) if it isn't running.
+8. Open **https://chatgpt.com** and log in. If a ChatGPT tab was already open, **reload it** so the extension can attach.
+9. Click the extension icon. The popup should say **READY** and show `Tabs: 0 busy / 1 open`.
 
 Open **more chatgpt.com tabs** to run several requests in parallel, one per tab.
+
+**What the extension can access:** only `https://chatgpt.com/*`, plus the `storage`, `alarms` and `scripting` permissions. It talks only to your local server (`ws://127.0.0.1:8765/bridge` by default; change it under popup → **Settings**).
+
+**Updating** (after `git pull` or editing files): open the extensions page, click **↻** on **ChatGPT API Bridge**, then reload your chatgpt.com tab(s). See [When to reload the extension](#when-to-reload-the-extension).
+
+**Removing:** click **Remove** on the extension's card on the extensions page.
+
+**If something's wrong:**
+| Problem | Fix |
+|---|---|
+| "Manifest file is missing or unreadable" | You picked the wrong folder. Select `extension/`, the one containing `manifest.json`. |
+| Popup says **OFFLINE** | The server isn't running, or popup → Settings points to the wrong URL |
+| Popup says **NO TABS** | Open or reload a chatgpt.com tab |
+| Badge empty / no **ON** | Check that the extension's switch is on, then click **↻** on its card |
+| Red **Errors** button on the extension's card | Click it, copy the message, and include it in your bug report |
 
 ### 3. Test it
 
