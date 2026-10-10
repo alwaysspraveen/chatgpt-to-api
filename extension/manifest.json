@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT API Bridge",
+  "version": "0.1.0",
+  "description": "Relays prompts from a local OpenAI-compatible server into your open chatgpt.com tab.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "alarms",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "ChatGPT API Bridge",
+    "default_popup": "popup.html"
+  }
+}

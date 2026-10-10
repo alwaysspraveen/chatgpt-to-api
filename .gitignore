@@ -1,0 +1,16 @@
+# Not published
+adk-example/
+
+# Dependencies
+node_modules/
+
+# Local secrets and runtime state
+.env
+*.log
+*.pid
+server/sessions.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

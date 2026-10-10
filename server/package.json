@@ -1,0 +1,16 @@
+{
+  "name": "chatgpt-bridge-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenAI-compatible local API that relays requests to a ChatGPT browser tab via an extension",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

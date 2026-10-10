@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root { --ok: #10a37f; --warn: #e8a33d; --bad: #d9534f; --muted: #888; --border: #e3e3e3; --fg: #222; --bg: #fff; --sub: #f6f6f6; }
+    @media (prefers-color-scheme: dark) {
+      :root { --border: #3a3a3a; --fg: #eee; --bg: #1e1e1e; --sub: #2a2a2a; }
+    }
+    body { font: 13px system-ui, sans-serif; width: 300px; margin: 0; padding: 14px; color: var(--fg); background: var(--bg); }
+    h1 { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; }
+    .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; color: #fff; background: var(--muted); }
+    .rows { background: var(--sub); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+    .row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+    .row span:first-child { color: var(--muted); }
+    .row span:last-child { text-align: right; overflow-wrap: anywhere; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: var(--muted); }
+    .worker { font-size: 12px; padding: 2px 0 2px 10px; color: var(--fg); }
+    .worker.idle { color: var(--muted); }
+    .error { color: var(--bad); font-size: 12px; margin: -4px 0 12px; overflow-wrap: anywhere; }
+    .actions { display: flex; gap: 8px; margin-bottom: 12px; }
+    button { flex: 1; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--sub); color: var(--fg); font: inherit; font-weight: 600; cursor: pointer; }
+    button.stop { background: var(--bad); border-color: var(--bad); color: #fff; }
+    button.start { background: var(--ok); border-color: var(--ok); color: #fff; }
+    button:disabled { opacity: .45; cursor: default; }
+    details summary { cursor: pointer; color: var(--muted); }
+    label { display: block; margin: 8px 0 4px; color: var(--muted); }
+    input { width: 100%; box-sizing: border-box; padding: 6px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  </style>
+</head>
+<body>
+  <h1>ChatGPT API Bridge <span id="pill" class="pill">…</span></h1>
+
+  <div class="rows">
+    <div class="row"><span>Server</span><span><span id="connDot" class="dot"></span><span id="conn">…</span></span></div>
+    <div class="row"><span>Tabs</span><span id="tabs">…</span></div>
+    <div id="workers"></div>
+    <div class="row"><span>Completed</span><span id="completed">0</span></div>
+  </div>
+  <div id="error" class="error" hidden></div>
+
+  <div class="actions">
+    <button id="toggle">…</button>
+    <button id="cancel" disabled>Stop all replies</button>
+  </div>
+
+  <details>
+    <summary>Settings</summary>
+    <label for="url">Server WebSocket URL</label>
+    <input id="url" placeholder="ws://127.0.0.1:8765/bridge">
+    <button id="save">Save &amp; reconnect</button>
+  </details>
+  <script src="popup.js"></script>
+</body>
+</html>
