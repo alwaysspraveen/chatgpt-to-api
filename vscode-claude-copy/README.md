@@ -15,13 +15,15 @@ Other extensions can't read Claude Code's chat panel, so Claude saves each draft
 
 ## Side panel
 
-Click the **Claude Copy** icon (📋) in the activity bar.
+Click the **Claude Copy** icon in the activity bar. Each draft is shown as the message you're about to send:
 
-- **Drafts list:** newest first, each with a title, platform badge (Teams / Google Chat / Email…) and time. Updates live when Claude saves a draft.
-- **Copy:** copies **formatted** text, so Teams, Outlook and Google Chat paste real **bold** and bullet lists, not `**` symbols. On macOS the clipboard gets both HTML and plain text, and each app uses what it supports.
-- **Copy plain:** no formatting at all (`**`, `#`, backticks and links removed, bullets as `•`).
-- **🗑:** deletes that draft. The **⌫** icon in the panel title deletes all drafts.
-- Click a draft's text to expand it. Drag the panel into the **Secondary Side Bar** if you want it on the right.
+- **Destination label:** Teams (purple), Google Chat (green), Slack, Email, or Text.
+- **Rendered preview:** bold, lists, code and links as they'll look after pasting. Long drafts fade out at the bottom; **click the message** to expand or collapse it.
+- **Copy for Teams / Copy for Chat / Copy email:** copies with formatting, so Teams, Outlook and Google Chat show real bold and bullets.
+- **Plain:** copies with no formatting.
+- **Trash icon:** deletes the draft. The ⌫ icon in the panel title deletes all drafts.
+- **Grouping and search:** drafts are grouped by **Today / Yesterday / date**, newest first. A **search box** appears once you have 4 or more drafts.
+- **Theme:** follows your VS Code theme (light, dark, high contrast). Drag the panel into the **Secondary Side Bar** if you want it on the right.
 
 ## Shortcuts and commands
 
@@ -44,6 +46,6 @@ Click the **Claude Copy** icon (📋) in the activity bar.
 ```bash
 cd vscode-claude-copy
 npx @vscode/vsce package --allow-missing-repository
-"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" --install-extension claude-copy-0.4.1.vsix --force
+"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" --install-extension claude-copy-0.5.1.vsix --force
 ```
 Then run **Developer: Reload Window**. Alternatively, in the Extensions view use **⋯ → Install from VSIX…**.

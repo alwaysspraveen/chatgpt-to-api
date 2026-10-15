@@ -2,7 +2,7 @@
   "name": "claude-copy",
   "displayName": "Claude Copy",
   "description": "Side panel of the messages Claude drafts for you (saved with the save_draft MCP tool), with one-click copy for Teams / Google Chat.",
-  "version": "0.4.1",
+  "version": "0.5.1",
   "publisher": "local",
   "license": "MIT",
   "engines": {
