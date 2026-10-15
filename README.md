@@ -41,6 +41,8 @@ git clone https://github.com/alwaysspraveen/chatgpt-to-api.git
 cd chatgpt-to-api && ./install-drafts.bash
 ```
 
+This installs **drafts only**: Claude writes the message and `save_draft` saves it, with no ChatGPT bridge needed. Add `--with-chatgpt` if you also want Claude to be able to ask ChatGPT for drafts (needs `./start.bash`).
+
 Then reload VS Code. Your **current Claude Code session keeps working**: it picks up the MCP automatically (check with `/mcp`, and choose **Reconnect** if needed). Requirements: [Claude Code](https://claude.com/claude-code), [uv](https://docs.astral.sh/uv/) and VS Code. Formatted copy works on macOS; elsewhere Copy falls back to plain text. Details: [`chat-mcp/README.md`](chat-mcp/README.md) (the `save_draft` tool) and [`vscode-claude-copy/README.md`](vscode-claude-copy/README.md) (the panel).
 
 ---

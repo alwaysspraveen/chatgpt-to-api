@@ -88,18 +88,31 @@ SEPARATE = (
     "in this chat unless they are given here."
 )
 
+# ChatGPT tools need the ChatGPT bridge (./start.bash). Teammates who only use
+# save_draft run with CHATGPT_TOOLS=0 so Claude never picks a ChatGPT tool.
+CHATGPT_TOOLS = os.environ.get("CHATGPT_TOOLS", "1") != "0"
+
+SAVE_DRAFT_INSTRUCTIONS = (
+    "Whenever you (Claude) write a message for the user to send (Teams, Google Chat, Slack, email), write it "
+    "yourself and call save_draft with exactly the final message text, so it appears in the user's Claude Copy "
+    "panel in VS Code. save_draft does not need ChatGPT or any bridge. "
+)
+CHATGPT_INSTRUCTIONS = (
+    "Only if the user explicitly asks for ChatGPT to write it, use the ChatGPT tools (they need the local "
+    "ChatGPT bridge running): chatgpt_draft_message for a new message, chatgpt_draft_reply to answer a received "
+    "message, chatgpt_refine_draft to adjust the latest one. They continue in the same ChatGPT chat; pass "
+    "new_chat=true only when the user asks for a new chat. Show the returned draft verbatim; it can take 5–30 seconds."
+)
+
 mcp = FastMCP(
     "chatgpt-drafts",
-    instructions=(
-        "Drafts messages with ChatGPT for the user to paste into Microsoft Teams, Google Chat, Slack or email. "
-        "Use draft_message for a new message, draft_reply to answer a message the user received, and "
-        "refine_draft to adjust the latest draft. All drafts continue in the same ChatGPT chat; pass "
-        "new_chat=true only when the user asks for a new/fresh chat. "
-        "Whenever YOU (Claude) write a message for the user to send (Teams, Google Chat, Slack, email), call "
-        "save_draft with exactly the final message text, so it appears in the user's Claude Copy panel. "
-        "Show the returned draft to the user verbatim so they can copy it. Drafts can take 5–30 seconds."
-    ),
+    instructions=SAVE_DRAFT_INSTRUCTIONS + (CHATGPT_INSTRUCTIONS if CHATGPT_TOOLS else ""),
 )
+
+
+def chatgpt_tool(**kwargs):
+    """Registers a ChatGPT-backed tool only when CHATGPT_TOOLS is enabled."""
+    return mcp.tool(**kwargs) if CHATGPT_TOOLS else (lambda fn: fn)
 
 
 def _clean(text: str) -> str:
@@ -158,8 +171,9 @@ async def _post(prompt: str, conversation_id: str | None) -> dict:
     return {"draft": draft, "conversation_id": data.get("conversation_id")}
 
 
-@mcp.tool(
-    annotations={"title": "Draft a message", "readOnlyHint": True, "openWorldHint": True},
+@chatgpt_tool(
+    name="chatgpt_draft_message",
+    annotations={"title": "Ask ChatGPT to draft a message", "readOnlyHint": True, "openWorldHint": True},
     timeout=TIMEOUT_S + 10,
 )
 async def draft_message(
@@ -172,7 +186,8 @@ async def draft_message(
     language: Annotated[str, Field(description="Language to write in")] = "English",
     new_chat: Annotated[bool, Field(description="Start a fresh ChatGPT chat. Only when the user explicitly asks for a new chat; otherwise drafts continue in the same chat.")] = False,
 ) -> dict:
-    """Draft a new message with ChatGPT, ready to paste into Teams, Google Chat, Slack or email.
+    """Ask ChatGPT (via the local ChatGPT bridge) to draft a message. Use ONLY when the user explicitly
+    asks for ChatGPT; for messages you write yourself, use save_draft instead.
 
     Continues the current drafts chat; set new_chat only when the user asks for a new chat.
     Returns {"draft": <message text>, "conversation_id": <chat id>}.
@@ -194,8 +209,9 @@ async def draft_message(
     return await _ask("\n\n".join(p for p in parts if p), new_chat=new_chat)
 
 
-@mcp.tool(
-    annotations={"title": "Draft a reply", "readOnlyHint": True, "openWorldHint": True},
+@chatgpt_tool(
+    name="chatgpt_draft_reply",
+    annotations={"title": "Ask ChatGPT to draft a reply", "readOnlyHint": True, "openWorldHint": True},
     timeout=TIMEOUT_S + 10,
 )
 async def draft_reply(
@@ -208,7 +224,8 @@ async def draft_reply(
     language: Annotated[str, Field(description="Language to write in")] = "English",
     new_chat: Annotated[bool, Field(description="Start a fresh ChatGPT chat. Only when the user explicitly asks for a new chat; otherwise drafts continue in the same chat.")] = False,
 ) -> dict:
-    """Draft a reply to a message I received, ready to paste.
+    """Ask ChatGPT (via the local ChatGPT bridge) to draft a reply. Use ONLY when the user explicitly
+    asks for ChatGPT; for replies you write yourself, use save_draft instead.
 
     Continues the current drafts chat; set new_chat only when the user asks for a new chat.
     Returns {"draft": <reply text>, "conversation_id": <chat id>}.
@@ -227,15 +244,16 @@ async def draft_reply(
     return await _ask("\n\n".join(p for p in parts if p), new_chat=new_chat)
 
 
-@mcp.tool(
-    annotations={"title": "Refine a draft", "readOnlyHint": True, "openWorldHint": True},
+@chatgpt_tool(
+    name="chatgpt_refine_draft",
+    annotations={"title": "Ask ChatGPT to refine its draft", "readOnlyHint": True, "openWorldHint": True},
     timeout=TIMEOUT_S + 10,
 )
 async def refine_draft(
     instructions: Annotated[str, Field(description="How to change the draft, e.g. 'shorter', 'more formal', 'mention the budget is approved'")],
     conversation_id: Annotated[str | None, Field(description="Chat to revise in; defaults to the current drafts chat")] = None,
 ) -> dict:
-    """Revise the latest draft (in the current drafts chat unless conversation_id is given).
+    """Ask ChatGPT to revise its latest draft (in the current ChatGPT chat unless conversation_id is given).
 
     Returns {"draft": <revised text>, "conversation_id": <id>}.
     """
@@ -278,7 +296,7 @@ def save_draft(
     return {"saved": True, "id": entry["id"], "copied": copied, "file": str(DRAFTS_FILE)}
 
 
-@mcp.tool(annotations={"title": "Check ChatGPT bridge", "readOnlyHint": True})
+@chatgpt_tool(annotations={"title": "Check ChatGPT bridge", "readOnlyHint": True})
 async def bridge_status() -> dict:
     """Check whether the ChatGPT bridge is running and has a chatgpt.com tab available."""
     try:

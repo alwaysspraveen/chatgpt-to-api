@@ -61,11 +61,13 @@ Restart Claude Desktop afterwards. If Claude Desktop can't find `uv`, use its fu
 
 | Tool | What it does | Key inputs |
 |---|---|---|
-| `draft_message` | Writes a new message | `request` (what to say), `platform`, `tone`, `length`, `audience`, `context`, `language`, `new_chat` |
-| `draft_reply` | Writes a reply to a message you received | `incoming_message`, `intent`, `platform`, `tone`, `length`, `sender`, `language`, `new_chat` |
-| `refine_draft` | Revises the latest draft | `instructions`, optional `conversation_id` |
-| `bridge_status` | Checks the bridge is running and a ChatGPT tab is open | none |
-| `save_draft` | Saves a message **Claude** wrote for you, so it appears in the **Claude Copy** VS Code panel. Doesn't use ChatGPT or the bridge. | `text`, `platform`, `title`, `copy_to_clipboard` |
+| `save_draft` | Saves a message **Claude** wrote for you, so it appears in the **Claude Copy** VS Code panel. **No ChatGPT or bridge needed.** | `text`, `platform`, `title`, `copy_to_clipboard` |
+| `chatgpt_draft_message` | *ChatGPT tools only:* asks ChatGPT to write a new message | `request` (what to say), `platform`, `tone`, `length`, `audience`, `context`, `language`, `new_chat` |
+| `chatgpt_draft_reply` | *ChatGPT tools only:* asks ChatGPT to write a reply | `incoming_message`, `intent`, `platform`, `tone`, `length`, `sender`, `language`, `new_chat` |
+| `chatgpt_refine_draft` | *ChatGPT tools only:* asks ChatGPT to revise its latest draft | `instructions`, optional `conversation_id` |
+| `bridge_status` | *ChatGPT tools only:* checks the bridge is running and a ChatGPT tab is open | none |
+
+**Drafts-only vs. ChatGPT tools.** `./install-drafts.bash` registers the MCP with `CHATGPT_TOOLS=0`, so Claude sees only `save_draft` and never tries a tool that needs the ChatGPT bridge. Run `./install-drafts.bash --with-chatgpt` to also enable the ChatGPT tools; those need the bridge from this repo running (`./start.bash`) and a chatgpt.com tab open. Claude uses them only when you explicitly ask for ChatGPT.
 
 - **`platform`:** `teams` (default), `google_chat`, `slack`, `email`, `plain`. Formatting follows each app: Teams Markdown, Google Chat `*bold*` / `_italic_`, Slack mrkdwn, email with a `Subject:` line.
 - **`length`:** `one_line`, `short` (default), `medium`, `long`.
@@ -76,7 +78,8 @@ Restart Claude Desktop afterwards. If Claude Desktop can't find `uv`, use its fu
 
 - *"Use ChatGPT to draft a Teams message telling the dev channel the release moves to Friday because QA found a blocker. Friendly tone."*
 - *"Draft a Google Chat reply to Priya: 'Can we meet at 3?' Say yes but suggest 4pm."*
-- *"Make that draft shorter and more formal."* (Claude calls `refine_draft`)
+- *"Make that draft shorter and more formal."* (Claude rewrites it and saves the new version with `save_draft`)
+- *"Ask ChatGPT to draft …"* (only with `--with-chatgpt`: Claude calls `chatgpt_draft_message`)
 - *"In a new chat, draft a leave email to my manager for Oct 20–22."* (starts a fresh ChatGPT chat)
 - *"Draft an email to the client confirming the invoice was paid, medium length."*
 
@@ -95,6 +98,7 @@ When **Claude itself** writes a message for you (*"draft a Teams message to …"
 | `CHATGPT_BRIDGE_URL` | `http://127.0.0.1:8765/v1` | Bridge address |
 | `CHATGPT_BRIDGE_KEY` | read from `../server/.env` | Bridge API key |
 | `CHATGPT_DRAFT_TIMEOUT` | `240` | Seconds to wait for ChatGPT |
+| `CHATGPT_TOOLS` | `1` (`0` via the installer) | `0` = only `save_draft`; `1` = also the ChatGPT tools |
 | `CLAUDE_DRAFTS_FILE` | `~/.claude-copy/drafts.jsonl` | Where `save_draft` writes |
 
 To set them for Claude Code: `claude mcp add … -e CHATGPT_BRIDGE_KEY=sk-local-… -- uv …`

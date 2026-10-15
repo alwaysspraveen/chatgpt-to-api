@@ -4,15 +4,23 @@
 #   2. Claude Copy VS Code extension (side panel with Copy buttons)
 #   3. ~/.claude/CLAUDE.md instruction + permission so Claude saves drafts automatically
 # Safe to re-run: steps that are already done are skipped.
-#   ./install-drafts.bash            install
-#   ./install-drafts.bash --force    re-register the MCP even if it exists
+#   ./install-drafts.bash                 install (drafts only: Claude writes, save_draft saves)
+#   ./install-drafts.bash --with-chatgpt  also enable the ChatGPT drafting tools (needs the
+#                                         ChatGPT bridge from this repo running: ./start.bash)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 MCP_DIR="$ROOT/chat-mcp"
 VSIX="$(ls -t "$ROOT"/vscode-claude-copy/dist/claude-copy-*.vsix 2>/dev/null | head -1)"
 CLAUDE_DIR="$HOME/.claude"
-FORCE=false; [ "${1:-}" = "--force" ] && FORCE=true
+CHATGPT_TOOLS=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-chatgpt) CHATGPT_TOOLS=1 ;;
+    --force) ;; # accepted for compatibility; the MCP is always re-registered now
+    *) echo "Unknown option: $arg" >&2; exit 1 ;;
+  esac
+done
 
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 skip() { printf '  \033[90m• %s\033[0m\n' "$1"; }
@@ -46,27 +54,27 @@ echo "1/3  MCP server (save_draft)…"
 ok "Python dependencies installed"
 # Register with the absolute path to uv: Claude Code started from VS Code or the
 # desktop app often doesn't have ~/.local/bin on PATH, so a bare "uv" fails to start.
-EXPECTED="$UV --directory $MCP_DIR run server.py"
-CURRENT="$(claude mcp get chatgpt-drafts 2>/dev/null | sed -n 's/^ *Command: *//p;s/^ *Args: *//p' | paste -sd' ' -)"
-if [ "$CURRENT" = "$EXPECTED" ] && ! $FORCE; then
-  skip "chatgpt-drafts already registered (use --force to re-register)"
+# Always (re-)register so updated options apply. CHATGPT_TOOLS=0 hides the
+# ChatGPT tools, so Claude never picks one that needs the bridge.
+claude mcp remove chatgpt-drafts --scope user >/dev/null 2>&1
+if ! out="$(claude mcp add --scope user chatgpt-drafts -e CHATGPT_TOOLS=$CHATGPT_TOOLS -- "$UV" --directory "$MCP_DIR" run server.py 2>&1)"; then
+  printf '%s\n' "$out"
+  fail "claude mcp add failed (output above)"
+fi
+if [ "$CHATGPT_TOOLS" = 1 ]; then
+  ok "Registered chatgpt-drafts: save_draft + ChatGPT tools (needs ./start.bash for ChatGPT)"
 else
-  claude mcp remove chatgpt-drafts --scope user >/dev/null 2>&1
-  if ! out="$(claude mcp add --scope user chatgpt-drafts -- "$UV" --directory "$MCP_DIR" run server.py 2>&1)"; then
-    printf '%s\n' "$out"
-    fail "claude mcp add failed (output above)"
-  fi
-  ok "Registered chatgpt-drafts with Claude Code (user scope, $UV)"
+  ok "Registered chatgpt-drafts: save_draft only (no ChatGPT bridge needed)"
 fi
 # Confirm Claude Code can actually see it.
 if claude mcp list 2>/dev/null | grep -q "^chatgpt-drafts"; then
   ok "claude mcp list shows chatgpt-drafts"
 else
   warn "chatgpt-drafts is not in 'claude mcp list'. Claude Code version: $(claude --version 2>/dev/null)"
-  warn "Register it by hand:  claude mcp add --scope user chatgpt-drafts -- \"$UV\" --directory \"$MCP_DIR\" run server.py"
+  warn "Register it by hand:  claude mcp add --scope user chatgpt-drafts -e CHATGPT_TOOLS=$CHATGPT_TOOLS -- \"$UV\" --directory \"$MCP_DIR\" run server.py"
 fi
 # Prove it starts the way Claude Code will start it (no shell PATH).
-if env -i HOME="$HOME" "$UV" --directory "$MCP_DIR" run python -c "import server" >/dev/null 2>&1; then
+if env -i HOME="$HOME" CHATGPT_TOOLS=$CHATGPT_TOOLS "$UV" --directory "$MCP_DIR" run python -c "import server" >/dev/null 2>&1; then
   ok "MCP server starts without your shell's PATH"
 else
   warn "MCP server failed to start: run  $UV --directory \"$MCP_DIR\" run server.py  to see the error"
