@@ -1,0 +1,114 @@
+{
+  "name": "claude-copy",
+  "displayName": "Claude Copy",
+  "description": "Side panel of the messages Claude drafts for you (saved with the save_draft MCP tool), with one-click copy for Teams / Google Chat.",
+  "version": "0.4.1",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:claudeCopy.panel"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeCopy.copyLastDraft",
+        "title": "Copy Last Draft",
+        "category": "Claude Copy"
+      },
+      {
+        "command": "claudeCopy.pick",
+        "title": "Pick a Draft to Copy\u2026",
+        "category": "Claude Copy"
+      },
+      {
+        "command": "claudeCopy.refresh",
+        "title": "Refresh",
+        "category": "Claude Copy",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeCopy.clear",
+        "title": "Delete All Drafts",
+        "category": "Claude Copy",
+        "icon": "$(clear-all)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "claudeCopy.copyLastDraft",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Copy",
+      "properties": {
+        "claudeCopy.format": {
+          "type": "string",
+          "enum": [
+            "rich",
+            "plain",
+            "markdown"
+          ],
+          "default": "rich",
+          "enumDescriptions": [
+            "Formatted (real bold, bullets): pastes cleanly into Teams, Outlook, Google Chat (macOS)",
+            "No formatting at all",
+            "Raw Markdown as written (shows ** in apps that don't render Markdown)"
+          ],
+          "description": "Format used by Copy, the shortcut and the status bar."
+        },
+        "claudeCopy.autoCopyDrafts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Copy each new draft to the clipboard as soon as Claude saves it."
+        },
+        "claudeCopy.draftsFile": {
+          "type": "string",
+          "default": "",
+          "description": "Drafts file written by the save_draft MCP tool. Empty = ~/.claude-copy/drafts.jsonl."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeCopy",
+          "title": "Claude Copy",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeCopy": [
+        {
+          "type": "webview",
+          "id": "claudeCopy.panel",
+          "name": "Drafts"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudeCopy.refresh",
+          "when": "view == claudeCopy.panel",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeCopy.clear",
+          "when": "view == claudeCopy.panel",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  }
+}

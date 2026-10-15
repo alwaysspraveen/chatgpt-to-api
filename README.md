@@ -32,6 +32,19 @@ The extension types each prompt into a real chatgpt.com tab, clicks Send, reads 
 
 ---
 
+## Claude drafts (share with your team)
+
+Separately from the API bridge, this repo has a small **"Claude drafts"** workflow: ask Claude Code to draft a Teams/Chat/email message, and it appears in a **VS Code side panel** with a **Copy** button that pastes real formatting into Teams. It doesn't need ChatGPT or the bridge.
+
+```bash
+git clone https://github.com/alwaysspraveen/chatgpt-to-api.git
+cd chatgpt-to-api && ./install-drafts.bash
+```
+
+Then reload VS Code and start a new Claude Code session. Requirements: [Claude Code](https://claude.com/claude-code), [uv](https://docs.astral.sh/uv/) and VS Code. Formatted copy works on macOS; elsewhere Copy falls back to plain text. Details: [`chat-mcp/README.md`](chat-mcp/README.md) (the `save_draft` tool) and [`vscode-claude-copy/README.md`](vscode-claude-copy/README.md) (the panel).
+
+---
+
 ## Contents
 
 1. [Quick enable checklist](#quick-enable-checklist)
@@ -387,7 +400,40 @@ Uploaded files are kept **in memory for 24 hours** (up to 200 files). They're cl
 **Limits and behaviour**
 - Up to **10 attachments** per request, **25 MB** each, and a **100 MB** request body
 - In a continuing chat, only attachments in the **new** message are uploaded, since earlier ones are already in the chat
-- Output is text only: no image or file generation
+- Output: text, plus **generated images** (see below). Files aren't generated.
+
+**Generated images (output)**
+
+Ask for an image ("Generate an image of a red bicycle") and the reply includes it:
+
+```json
+"message": {
+  "role": "assistant",
+  "content": "Generated 1 image.",
+  "images": [{
+    "type": "image_url",
+    "image_url": { "url": "data:image/png;base64,iVBORw0KGgo…" },
+    "file_id": "file-4007ef…",
+    "download_url": "/v1/files/file-4007ef…/content",
+    "width": 1374, "height": 1145
+  }]
+}
+```
+
+- `images` uses the same shape as OpenRouter's image output. The base64 PNG is inline.
+- Each image is also saved to the Files API: download it with `GET /v1/files/{file_id}/content` (Bearer key), kept for 24 hours.
+- Send **`"image_data": false`** to skip the inline base64 (several MB). `image_url.url` is then the download path. This is handy in Postman.
+- With `stream: true`, the images arrive in the last chunk's `delta.images`.
+- Image generation takes about **30–90 s**. Keep the ChatGPT tab visible, since hidden tabs are throttled, and set your client's timeout to at least 3 minutes.
+
+```bash
+curl http://127.0.0.1:8765/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{"new_chat": true, "image_data": false,
+       "messages": [{"role": "user", "content": "Generate an image of a red bicycle on a beach."}]}'
+# then download it:
+curl -s http://127.0.0.1:8765/v1/files/<file_id>/content -H "Authorization: Bearer $API_KEY" -o image.png
+```
 
 **curl recipes**
 
@@ -443,8 +489,38 @@ curl -s -X DELETE http://127.0.0.1:8765/v1/files/$FILE_ID -H "Authorization: Bea
 *Several files at once:* add more `file` / `image_url` parts to `content`, up to 10.
 
 **Postman**
-1. **Upload:** `POST http://127.0.0.1:8765/v1/files`, header `Authorization: Bearer <key>`, **Body → form-data**: key `purpose` (Text) = `user_data`, key `file` (switch the type to **File**) = pick your file. Copy the `id` from the response.
-2. **Ask:** `POST http://127.0.0.1:8765/v1/chat/completions`, **Body → raw → JSON**, with the `file_id` request from above.
+
+Import these with **Import → Raw text**. Replace the key, the file path and the id.
+
+1. **Upload:**
+   ```bash
+   curl --location 'http://127.0.0.1:8765/v1/files' \
+   --header 'Authorization: Bearer YOUR_API_KEY' \
+   --form 'purpose="user_data"' \
+   --form 'file=@"/path/to/report.pdf"'
+   ```
+   Copy the `id` from the response (`"file-…"`). To pick another file later, open **Body → form-data** and use **Select Files** on the `file` row.
+2. **Ask about it:**
+   ```bash
+   curl --location 'http://127.0.0.1:8765/v1/chat/completions' \
+   --header 'Authorization: Bearer YOUR_API_KEY' \
+   --header 'Content-Type: application/json' \
+   --data '{
+     "new_chat": true,
+     "messages": [{
+       "role": "user",
+       "content": [
+         { "type": "text", "text": "Summarize this document in 5 bullet points." },
+         { "type": "file", "file": { "file_id": "file-PASTE-ID-HERE" } }
+       ]
+     }]
+   }'
+   ```
+3. *Optional:* to skip copying the id by hand, add this to request 1's **Scripts → Post-response**:
+   `pm.collectionVariables.set("file_id", pm.response.json().id);`
+   Then use `"file_id": "{{file_id}}"` in request 2.
+
+Set **Settings → General → Request timeout** to `0`: uploads and answers can take a minute.
 
 **Python (OpenAI SDK)**
 ```python
@@ -599,7 +675,7 @@ All errors look like `{"error": {"message": "...", "type": "..."}}`.
 | `502` | `upstream_error` | Failure in the tab: selector timeout, cancelled, ChatGPT didn't reply, or the job timed out |
 | `503` | `service_unavailable` | Extension not connected, or no chatgpt.com tab open |
 
-Tab errors include page diagnostics, e.g. `Timed out waiting for prompt input | script=v15-files url=/ editors=[…] …`.
+Tab errors include page diagnostics, e.g. `Timed out waiting for prompt input | script=v16-images-out url=/ editors=[…] …`.
 
 ---
 
@@ -648,7 +724,7 @@ The extension's server URL can be changed under **popup → Settings**. The defa
 | `extension/popup.*` | No. Reopen the popup. |
 | `server/**` | No. Restart the server. |
 
-Errors from the tab start with `script=<version>` (for example `script=v15-files`), so you can confirm which content-script version is running.
+Errors from the tab start with `script=<version>` (for example `script=v16-images-out`), so you can confirm which content-script version is running.
 
 ---
 
@@ -743,6 +819,7 @@ Edit `API_KEY` in `server/.env`, run `./stop.bash && ./start.bash`, and update e
 | **Replies include widget or card text** | Apply the recommended ChatGPT settings. Keep `PLAIN_TEXT=1`. |
 | **"You've reached your limit" in ChatGPT** | You've hit your plan's message limit. Wait, or switch the tab to another model. Reduce agent loops and parallel tabs. |
 | **"Port 8765 is already in use"** | Run `./stop.bash`. If something else owns the port (`lsof -iTCP:8765 -sTCP:LISTEN`), set `PORT=8766` in `server/.env` and update popup → Settings. |
+| **ChatGPT answers but ignores the file** (no attachment appears in the message box) | The tab is running an old extension that doesn't know about files. Reload the extension (**↻** on `chrome://extensions`), then reload the chatgpt.com tab. Errors should show `script=v16-images-out`. |
 | **`Could not attach files` / `Timed out waiting for file upload to finish`** | ChatGPT's attachment area changed, the file type isn't accepted, or the upload failed. Check the file in the tab, then send the outerHTML of the message box so the `attachments` selector can be updated. |
 | **Popup shows old behaviour or errors show an old `script=` version** | Reload the extension, then reload each chatgpt.com tab |
 
@@ -787,7 +864,7 @@ curl-examples.sh     ready-made curl requests
 - Slower than the real API: roughly 3–60 s per call, depending on reply length
 - One request per tab. More tabs mean more parallelism, and more load on your account.
 - No real sampling controls (temperature, top_p, seed and logprobs are approximated or ignored) or exact token counts
-- Files and images in only (no image or file output); no audio
+- Files and images in; generated images out (no file output); no audio
 - Tool calling depends on ChatGPT following the prompt format
 - Breaks whenever ChatGPT changes its page layout, until the selectors are updated
 - ChatGPT plan message limits apply, and heavy automated use risks account action

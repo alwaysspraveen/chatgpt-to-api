@@ -41,8 +41,8 @@ const isSystem = (m) => m.role === 'system' || m.role === 'developer';
 // ChatGPT likes to answer some questions (weather, places, stocks, images) with
 // visual widgets instead of text, which an API caller can't use.
 const PLAIN_TEXT = process.env.PLAIN_TEXT !== '0';
-const STYLE_RULE = '[Response style]\nAnswer in plain text (Markdown is fine). Do not use widgets, cards, maps, charts, images, canvas, or web search.';
-const STYLE_REMINDER = '(Plain text only: no widgets, cards, images or web search.)';
+const STYLE_RULE = '[Response style]\nAnswer in plain text (Markdown is fine). Do not use widgets, cards, maps, charts, canvas, or web search. Only create images when explicitly asked to.';
+const STYLE_REMINDER = '(Plain text: no widgets, cards or web search; images only if asked.)';
 
 function functionTools(tools) {
   return (Array.isArray(tools) ? tools : [])

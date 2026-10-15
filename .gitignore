@@ -9,8 +9,10 @@ node_modules/
 *.log
 *.pid
 server/sessions.json
-
 # OS / editor
 .DS_Store
 .vscode/
 .idea/
+
+# Local planning notes
+dev/

@@ -9,16 +9,20 @@ const SELECTORS = {
   finished: '[data-testid="copy-turn-action-button"], button[aria-label="Copy"], button[aria-label="Good response"]',
   newChat: '[data-testid="create-new-chat-button"], a[aria-label="New chat"], button[aria-label="New chat"], a[href="/"]',
   assistant: '[data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"]',
+  // Image-generation replies have no assistant marker; they render as a gallery.
+  imageGallery: '[data-testid="generated-image-gallery"]',
+  generatedImage: 'img[alt^="Generated image"]',
   replyBody: '[data-markdown-text-style="assistant-message"], .markdown',
   attachments: '[data-composer-attachments]',
   uploading: '[role="progressbar"], .animate-spin, [aria-busy="true"]',
 };
 
-const SCRIPT_VERSION = 'v15-files';
+const SCRIPT_VERSION = 'v16-images-out';
 const POLL_MS = 150;
 const STABLE_POLLS = 10; // fallback: ~1.5s with no change and no stop button => done
 const FAST_STABLE_POLLS = 2; // once ChatGPT signals it's finished, confirm briefly
-const START_TIMEOUT_MS = 60_000;
+const START_TIMEOUT_MS = 180_000; // image generation can take a while to show anything
+const IMAGE_STABLE_POLLS = 27; // ~4s unchanged before a generated image counts as final
 
 let current = null; // { id, cancelled }
 
@@ -157,6 +161,35 @@ function insertPrompt(input, text) {
   document.execCommand('insertText', false, text);
 }
 
+// --- Generated images ----------------------------------------------------------
+// Generated images are shown from blob:/https: URLs on chatgpt.com; read their
+// bytes here so the API can return them as base64.
+function generatedImages(galleries) {
+  return galleries.flatMap((g) => Array.from(g.querySelectorAll(SELECTORS.generatedImage)));
+}
+
+const imagesReady = (imgs) => imgs.length > 0 && imgs.every((img) => img.complete && img.naturalWidth > 0);
+
+async function imageToData(img) {
+  try {
+    const blob = await (await fetch(img.currentSrc || img.src)).blob();
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    return { mime: blob.type || 'image/png', data, width: img.naturalWidth, height: img.naturalHeight };
+  } catch {
+    // Fall back to redrawing the displayed image.
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    return { mime: 'image/png', data: canvas.toDataURL('image/png').split(',')[1], width: img.naturalWidth, height: img.naturalHeight };
+  }
+}
+
 // --- Attachments & options ----------------------------------------------------
 function attachmentBox() {
   return $$(SELECTORS.attachments).find((el) => !el.hidden) || null;
@@ -276,8 +309,11 @@ async function runJob({ id, text, newChat, conversationId, files, maxChars, stop
     const input = await waitFor(() => $(SELECTORS.input), 10_000, 'prompt input');
     mark('ready');
     if (newChat) setThink(think);
-    const before = new Set($$(SELECTORS.assistant));
-    const newReply = () => visible(SELECTORS.assistant).filter((el) => !before.has(el)).at(-1) || null;
+    const replySel = `${SELECTORS.assistant}, ${SELECTORS.imageGallery}`;
+    const before = new Set($$(replySel));
+    const fresh = (sel) => visible(sel).filter((el) => !before.has(el));
+    const newReply = () => fresh(replySel).at(-1) || null;
+    const newText = () => fresh(SELECTORS.assistant).filter((el) => !el.matches(SELECTORS.imageGallery)).at(-1) || null;
     await attachFiles(input, files);
     if (text) insertPrompt(input, text);
 
@@ -294,12 +330,17 @@ async function runJob({ id, text, newChat, conversationId, files, maxChars, stop
     mark('replyStarted');
 
     let last = '';
+    let lastImages = '';
     let stable = 0;
     let sawStop = false;
+    let imgs = [];
     while (!job.cancelled) {
       await sleep(POLL_MS);
-      const el = newReply() || reply;
-      const text = replyText(el);
+      const el = newText() || newReply() || reply;
+      const text = el.matches(SELECTORS.imageGallery) ? '' : replyText(el);
+      imgs = generatedImages(fresh(SELECTORS.imageGallery));
+      // Progressive previews swap the src; only a settled, loaded set counts.
+      const imageState = imgs.map((i) => `${i.currentSrc || i.src}|${i.naturalWidth}`).join(',');
       const generating = Boolean($(SELECTORS.stop));
       sawStop ||= generating;
       // max_tokens / stop: stop generating as soon as the limit is reached.
@@ -310,21 +351,28 @@ async function runJob({ id, text, newChat, conversationId, files, maxChars, stop
         report({ type: 'delta', id, text });
         break;
       }
-      if (text !== last) {
-        if (!timing.firstText && text) mark('firstText');
+      if (text !== last || imageState !== lastImages) {
+        if (!timing.firstText && (text || imgs.length)) mark('firstText');
+        if (text !== last) report({ type: 'delta', id, text });
         last = text;
+        lastImages = imageState;
         stable = 0;
-        report({ type: 'delta', id, text });
-      } else if (!generating && text) {
+      } else if (!generating && (text || imgs.length)) {
         stable += 1;
-        const signalled = sawStop || Boolean(el.querySelector(SELECTORS.finished));
-        if (stable >= (signalled ? FAST_STABLE_POLLS : STABLE_POLLS)) break;
+        if (imgs.length) {
+          if (imagesReady(imgs) && stable >= IMAGE_STABLE_POLLS) break;
+        } else {
+          const signalled = sawStop || Boolean(el.querySelector(SELECTORS.finished));
+          if (stable >= (signalled ? FAST_STABLE_POLLS : STABLE_POLLS)) break;
+        }
       }
     }
     if (job.cancelled) throw new Error('Cancelled');
     const chatId = (location.pathname.match(/\/c\/([\w-]+)/) || [])[1] || null;
+    const images = [];
+    for (const img of imgs) images.push(await imageToData(img));
     mark('done');
-    report({ type: 'done', id, text: last, chatId, source: 'dom', timing });
+    report({ type: 'done', id, text: last, chatId, images, source: 'dom', timing });
   } finally {
     if (current === job) current = null;
   }

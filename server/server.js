@@ -112,7 +112,10 @@ function onBridgeMessage(raw) {
   } else if (msg.type === 'done' && typeof msg.text === 'string') {
     job.onText?.(msg.text);
     job.tab = msg.timing && typeof msg.timing === 'object' ? { ...msg.timing, source: msg.source } : null;
-    finish(msg.id, null, { text: msg.text, chatId: typeof msg.chatId === 'string' ? msg.chatId : null });
+    const images = Array.isArray(msg.images)
+      ? msg.images.filter((i) => i && typeof i.data === 'string' && /^image\/[\w.+-]+$/.test(i.mime || ''))
+      : [];
+    finish(msg.id, null, { text: msg.text, chatId: typeof msg.chatId === 'string' ? msg.chatId : null, images });
   } else if (msg.type === 'requeue') {
     // The extension had no free tab after all; try again when one frees up.
     running.delete(job.id);
@@ -416,9 +419,30 @@ async function chatCompletions(req, res) {
   });
 
   // Reply text -> OpenAI message, with max_tokens/stop applied.
-  const finalize = ({ text, chatId }, index) => {
+  const finalize = ({ text, chatId, images = [] }, index) => {
     const parsed = parseReply(text, opts);
     const message = { role: 'assistant', content: parsed.content };
+    // Generated images: returned inline (base64) and saved to /v1/files for download.
+    if (images.length) {
+      message.images = images.map((img, i) => {
+        const ext = (img.mime.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        const file = fileStore.add({
+          filename: `generated-${id}-${index}-${i + 1}.${ext}`,
+          mime: img.mime,
+          buffer: Buffer.from(img.data, 'base64'),
+          purpose: 'generated_image',
+        });
+        return {
+          type: 'image_url',
+          // `image_data: false` in the request returns only the download link.
+          image_url: { url: body.image_data === false ? `/v1/files/${file.id}/content` : `data:${img.mime};base64,${img.data}` },
+          file_id: file.id,
+          download_url: `/v1/files/${file.id}/content`,
+          width: img.width,
+          height: img.height,
+        };
+      });
+    }
     let finishReason = 'stop';
     if (parsed.toolCalls) {
       message.tool_calls = parsed.toolCalls;
@@ -427,6 +451,9 @@ async function chatCompletions(req, res) {
       const limited = applyLimits(parsed.content, opts);
       message.content = limited.text;
       if (limited.reason === 'length') finishReason = 'length';
+    }
+    if (message.images && !message.content) {
+      message.content = `Generated ${message.images.length} image${message.images.length > 1 ? 's' : ''}.`;
     }
     if (index === 0) sessions.remember(body.messages, message, chatId);
     return { chatId, message, finishReason, completionTokens: estimateTokens(text) };
@@ -501,6 +528,7 @@ async function chatCompletions(req, res) {
     } else if (r.message.content.startsWith(sent) && r.message.content.length > sent.length) {
       chunk(i, { content: r.message.content.slice(sent.length) });
     }
+    if (r.message.images) chunk(i, { images: r.message.images });
     chunk(i, {}, r.finishReason, { conversation_id: r.chatId });
     return r;
   };
@@ -587,7 +615,7 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocketServer({
   server,
   path: '/bridge',
-  maxPayload: 8 * 1024 * 1024,
+  maxPayload: 64 * 1024 * 1024, // replies can carry generated images
   verifyClient: ({ origin }) => typeof origin === 'string' && origin.startsWith('chrome-extension://'),
 });
 
