@@ -1,9 +1,14 @@
 {
-  "name": "claude-copy",
-  "displayName": "Claude Copy",
-  "description": "Side panel of the messages Claude drafts for you (saved with the save_draft MCP tool), with one-click copy for Teams / Google Chat.",
-  "version": "0.5.1",
-  "publisher": "local",
+  "name": "drafts-panel",
+  "displayName": "Drafts Panel for Claude Code",
+  "description": "A side panel of the messages Claude Code drafts for you (Teams, Google Chat, Slack, email), with one-click copy that keeps bold and bullets. Unofficial; not affiliated with Anthropic.",
+  "version": "0.6.0",
+  "publisher": "alwaysspraveen",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#13343B",
+    "theme": "dark"
+  },
   "license": "MIT",
   "engines": {
     "vscode": "^1.80.0"
@@ -11,6 +16,23 @@
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "claude code",
+    "drafts",
+    "teams",
+    "google chat",
+    "clipboard",
+    "copy",
+    "mcp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alwaysspraveen/chatgpt-to-api"
+  },
+  "bugs": {
+    "url": "https://github.com/alwaysspraveen/chatgpt-to-api/issues"
+  },
+  "homepage": "https://github.com/alwaysspraveen/chatgpt-to-api/tree/main/vscode-claude-copy#readme",
   "main": "./extension.js",
   "activationEvents": [
     "onStartupFinished",
@@ -21,23 +43,23 @@
       {
         "command": "claudeCopy.copyLastDraft",
         "title": "Copy Last Draft",
-        "category": "Claude Copy"
+        "category": "Drafts Panel"
       },
       {
         "command": "claudeCopy.pick",
         "title": "Pick a Draft to Copy\u2026",
-        "category": "Claude Copy"
+        "category": "Drafts Panel"
       },
       {
         "command": "claudeCopy.refresh",
         "title": "Refresh",
-        "category": "Claude Copy",
+        "category": "Drafts Panel",
         "icon": "$(refresh)"
       },
       {
         "command": "claudeCopy.clear",
         "title": "Delete All Drafts",
-        "category": "Claude Copy",
+        "category": "Drafts Panel",
         "icon": "$(clear-all)"
       }
     ],
@@ -49,7 +71,7 @@
       }
     ],
     "configuration": {
-      "title": "Claude Copy",
+      "title": "Drafts Panel",
       "properties": {
         "claudeCopy.format": {
           "type": "string",
@@ -82,7 +104,7 @@
       "activitybar": [
         {
           "id": "claudeCopy",
-          "title": "Claude Copy",
+          "title": "Drafts",
           "icon": "media/icon.svg"
         }
       ]

@@ -1,3 +1,5 @@
 test/
 *.vsix
 dist/
+media/logo.svg
+.gitignore

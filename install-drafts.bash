@@ -11,7 +11,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 MCP_DIR="$ROOT/chat-mcp"
-VSIX="$(ls -t "$ROOT"/vscode-claude-copy/dist/claude-copy-*.vsix 2>/dev/null | head -1)"
+VSIX="$(ls -t "$ROOT"/vscode-claude-copy/dist/*.vsix 2>/dev/null | head -1)"
 CLAUDE_DIR="$HOME/.claude"
 CHATGPT_TOOLS=0
 for arg in "$@"; do
@@ -54,17 +54,26 @@ echo "1/3  MCP server (save_draft)…"
 ok "Python dependencies installed"
 # Register with the absolute path to uv: Claude Code started from VS Code or the
 # desktop app often doesn't have ~/.local/bin on PATH, so a bare "uv" fails to start.
-# Always (re-)register so updated options apply. CHATGPT_TOOLS=0 hides the
-# ChatGPT tools, so Claude never picks one that needs the bridge.
-claude mcp remove chatgpt-drafts --scope user >/dev/null 2>&1
-if ! out="$(claude mcp add --scope user chatgpt-drafts -e CHATGPT_TOOLS=$CHATGPT_TOOLS -- "$UV" --directory "$MCP_DIR" run server.py 2>&1)"; then
-  printf '%s\n' "$out"
-  fail "claude mcp add failed (output above)"
-fi
-if [ "$CHATGPT_TOOLS" = 1 ]; then
-  ok "Registered chatgpt-drafts: save_draft + ChatGPT tools (needs ./start.bash for ChatGPT)"
+# CHATGPT_TOOLS=0 hides the ChatGPT tools, so Claude never picks one that needs the bridge.
+# Only (re-)register when something differs: removing a server disconnects it from
+# every Claude session that is already open.
+CURRENT="$(claude mcp get chatgpt-drafts 2>/dev/null)"
+if printf '%s' "$CURRENT" | grep -qF "Command: $UV" \
+  && printf '%s' "$CURRENT" | grep -qF "Args: --directory $MCP_DIR run server.py" \
+  && printf '%s' "$CURRENT" | grep -qF "CHATGPT_TOOLS=$CHATGPT_TOOLS"; then
+  skip "chatgpt-drafts already registered with these settings (open sessions stay connected)"
 else
-  ok "Registered chatgpt-drafts: save_draft only (no ChatGPT bridge needed)"
+  claude mcp remove chatgpt-drafts --scope user >/dev/null 2>&1
+  if ! out="$(claude mcp add --scope user chatgpt-drafts -e CHATGPT_TOOLS=$CHATGPT_TOOLS -- "$UV" --directory "$MCP_DIR" run server.py 2>&1)"; then
+    printf '%s\n' "$out"
+    fail "claude mcp add failed (output above)"
+  fi
+  if [ "$CHATGPT_TOOLS" = 1 ]; then
+    ok "Registered chatgpt-drafts: save_draft + ChatGPT tools (needs ./start.bash for ChatGPT)"
+  else
+    ok "Registered chatgpt-drafts: save_draft only (no ChatGPT bridge needed)"
+  fi
+  warn "Open Claude sessions: type /mcp → chatgpt-drafts → Reconnect"
 fi
 # Confirm Claude Code can actually see it.
 if claude mcp list 2>/dev/null | grep -q "^chatgpt-drafts"; then
@@ -82,10 +91,19 @@ fi
 mkdir -p "$HOME/.claude-copy"
 
 # --- 2. VS Code extension -------------------------------------------------------------
-echo "2/3  VS Code extension (Claude Copy)…"
+echo "2/3  VS Code extension (Drafts Panel for Claude Code)…"
 if [ -n "$CODE" ] && [ -n "$VSIX" ]; then
-  "$CODE" --install-extension "$VSIX" --force >/dev/null 2>&1 && ok "Installed $(basename "$VSIX")" \
-    || warn "Install failed: in VS Code use Extensions → ⋯ → Install from VSIX… → $VSIX"
+  # Earlier versions were installed as "local.claude-copy"; remove it so there's only one panel.
+  "$CODE" --uninstall-extension local.claude-copy >/dev/null 2>&1 && ok "Removed old Claude Copy extension"
+  # Skip if this exact version is already installed: reinstalling restarts VS Code's
+  # extension host, which drops the "ide" connection of open Claude sessions.
+  WANT="$(unzip -p "$VSIX" extension/package.json 2>/dev/null | python3 -c 'import sys,json; p=json.load(sys.stdin); print(p["publisher"]+"."+p["name"]+"@"+p["version"])' 2>/dev/null)"
+  if [ -n "$WANT" ] && "$CODE" --list-extensions --show-versions 2>/dev/null | grep -qx "$WANT"; then
+    skip "$WANT already installed"
+  else
+    "$CODE" --install-extension "$VSIX" --force >/dev/null 2>&1 && ok "Installed $(basename "$VSIX")" \
+      || warn "Install failed: in VS Code use Extensions → ⋯ → Install from VSIX… → $VSIX"
+  fi
 else
   skip "Skipped (install by hand: Extensions → ⋯ → Install from VSIX… → $VSIX)"
 fi
@@ -126,7 +144,7 @@ PY
 cat <<'DONE'
 
 Done. Next:
-  • VS Code: Cmd+Shift+P → "Reload Window", then click the 📋 Claude Copy icon in the activity bar
+  • VS Code: Cmd+Shift+P → "Reload Window", then click the Drafts icon in the activity bar
   • Claude Code: keep your current session. It picks the MCP up automatically; type /mcp to check
     (if chatgpt-drafts isn't connected there, choose Reconnect). No restart needed.
   • Try: "Draft a Teams message to the team that the release moves to Friday"

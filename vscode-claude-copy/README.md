@@ -1,21 +1,30 @@
-# Claude Copy (VS Code extension)
+# Drafts Panel for Claude Code
 
-A side panel with the **messages Claude drafts for you**: Teams, Google Chat, Slack or email messages, ready to copy and paste. It shows **only drafts**, not your whole Claude conversation, and doesn't use ChatGPT.
+A side panel with the **messages Claude Code drafts for you**: Teams, Google Chat, Slack or email messages, ready to copy and paste. One click copies them **with formatting**, so Teams shows real bold and bullet lists instead of `**` symbols.
+
+> Unofficial community extension; not affiliated with or endorsed by Anthropic.
 
 ```
 You: "Draft a Teams message telling the team the release moves to Friday"
-Claude writes it → calls save_draft (chatgpt-drafts MCP) → ~/.claude-copy/drafts.jsonl → Claude Copy panel → [Copy]
+Claude Code writes it → saves it with the save_draft tool → it appears in the Drafts panel → [Copy for Teams]
 ```
 
-Other extensions can't read Claude Code's chat panel, so Claude saves each draft with the **`save_draft`** tool, and the panel shows that file.
+VS Code extensions can't read Claude Code's chat, so Claude saves each draft with a small **`save_draft` MCP tool**, and this panel shows them. Only drafts are saved, not your conversation.
 
 ## Requirements
 
-- The **chatgpt-drafts MCP** registered in Claude Code (see `chat-mcp/README.md` in the repo). Its `save_draft` tool is what Claude calls. It runs locally and doesn't need the ChatGPT bridge.
+- [Claude Code](https://claude.com/claude-code) and [uv](https://docs.astral.sh/uv/)
+- The `save_draft` MCP tool. One command sets it up, along with this extension and the instruction that tells Claude to use it:
+  ```bash
+  git clone https://github.com/alwaysspraveen/chatgpt-to-api.git
+  cd chatgpt-to-api && ./install-drafts.bash
+  ```
+  Details: [chat-mcp/README.md](https://github.com/alwaysspraveen/chatgpt-to-api/blob/main/chat-mcp/README.md)
+- Formatted copy works on **macOS**. On other systems, Copy falls back to plain text.
 
 ## Side panel
 
-Click the **Claude Copy** icon in the activity bar. Each draft is shown as the message you're about to send:
+Click the **Drafts** icon in the activity bar. Each draft is shown as the message you're about to send:
 
 - **Destination label:** Teams (purple), Google Chat (green), Slack, Email, or Text.
 - **Rendered preview:** bold, lists, code and links as they'll look after pasting. Long drafts fade out at the bottom; **click the message** to expand or collapse it.
@@ -29,9 +38,9 @@ Click the **Claude Copy** icon in the activity bar. Each draft is shown as the m
 
 | Command | Shortcut (mac / win-linux) |
 |---|---|
-| **Claude Copy: Copy Last Draft** | `Cmd+Alt+D` / `Ctrl+Alt+D` |
-| **Claude Copy: Pick a Draft to Copy…** | status bar **$(copy) Drafts** |
-| **Claude Copy: Delete All Drafts** | panel title bar |
+| **Drafts Panel: Copy Last Draft** | `Cmd+Alt+D` / `Ctrl+Alt+D` |
+| **Drafts Panel: Pick a Draft to Copy…** | status bar **$(copy) Drafts** |
+| **Drafts Panel: Delete All Drafts** | panel title bar |
 
 ## Settings
 
@@ -43,9 +52,8 @@ Click the **Claude Copy** icon in the activity bar. Each draft is shown as the m
 
 ## Install
 
-```bash
-cd vscode-claude-copy
-npx @vscode/vsce package --allow-missing-repository
-"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" --install-extension claude-copy-0.5.1.vsix --force
-```
-Then run **Developer: Reload Window**. Alternatively, in the Extensions view use **⋯ → Install from VSIX…**.
+Install **Drafts Panel for Claude Code** from the Extensions view, or run `./install-drafts.bash` from the [repository](https://github.com/alwaysspraveen/chatgpt-to-api), which also sets up the `save_draft` tool.
+
+## Privacy
+
+Drafts are stored locally in `~/.claude-copy/drafts.jsonl`. Nothing is sent anywhere by this extension.
