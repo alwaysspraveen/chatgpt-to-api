@@ -108,6 +108,7 @@ To set them for Claude Code: `claude mcp add … -e CHATGPT_BRIDGE_KEY=sk-local-
 | Message | Fix |
 |---|---|
 | `ChatGPT bridge is not running` | `./start.bash` in the repo root |
+| `claude mcp list` shows **chatgpt-drafts ✔ Connected**, but the session has no `save_draft` and `/mcp` doesn't list it | The session is running in an **old process**: a long-running or background session (`claude attach`) keeps the tools it started with, and re-attaching doesn't reload them. Find it with `ps -Ao pid,lstart,command \| grep -- '--session-id'`, stop it with `kill <PID>`, then in its folder run `claude --resume` and pick the same conversation. History is kept. In the VS Code extension: close the Claude tab, open a new one, and pick the conversation from past conversations. |
 | `Bridge error 503: Browser extension is not connected` | Open the extension popup; click **Start bridge** if it says STOPPED |
 | `Bridge error 503: No chatgpt.com tab is open` | Open https://chatgpt.com in Chrome |
 | `Bridge error 401` | The key doesn't match `API_KEY` in `server/.env` |
