@@ -20,6 +20,8 @@ warn() { printf '  \033[33m! %s\033[0m\n' "$1"; }
 fail() { printf '  \033[31m✗ %s\033[0m\n' "$1"; exit 1; }
 
 echo "Claude drafts installer"
+echo "  repo: $ROOT"
+echo "  claude: $(command -v claude 2>/dev/null) $(claude --version 2>/dev/null)"
 
 # --- Requirements --------------------------------------------------------------
 echo "Checking requirements…"
@@ -50,9 +52,18 @@ if [ "$CURRENT" = "$EXPECTED" ] && ! $FORCE; then
   skip "chatgpt-drafts already registered (use --force to re-register)"
 else
   claude mcp remove chatgpt-drafts --scope user >/dev/null 2>&1
-  claude mcp add --scope user chatgpt-drafts -- "$UV" --directory "$MCP_DIR" run server.py >/dev/null \
-    || fail "claude mcp add failed"
+  if ! out="$(claude mcp add --scope user chatgpt-drafts -- "$UV" --directory "$MCP_DIR" run server.py 2>&1)"; then
+    printf '%s\n' "$out"
+    fail "claude mcp add failed (output above)"
+  fi
   ok "Registered chatgpt-drafts with Claude Code (user scope, $UV)"
+fi
+# Confirm Claude Code can actually see it.
+if claude mcp list 2>/dev/null | grep -q "^chatgpt-drafts"; then
+  ok "claude mcp list shows chatgpt-drafts"
+else
+  warn "chatgpt-drafts is not in 'claude mcp list'. Claude Code version: $(claude --version 2>/dev/null)"
+  warn "Register it by hand:  claude mcp add --scope user chatgpt-drafts -- \"$UV\" --directory \"$MCP_DIR\" run server.py"
 fi
 # Prove it starts the way Claude Code will start it (no shell PATH).
 if env -i HOME="$HOME" "$UV" --directory "$MCP_DIR" run python -c "import server" >/dev/null 2>&1; then
