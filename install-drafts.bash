@@ -119,6 +119,7 @@ cat <<'DONE'
 
 Done. Next:
   • VS Code: Cmd+Shift+P → "Reload Window", then click the 📋 Claude Copy icon in the activity bar
-  • Claude Code: start a new session (or /mcp → chatgpt-drafts → Reconnect)
+  • Claude Code: keep your current session. It picks the MCP up automatically; type /mcp to check
+    (if chatgpt-drafts isn't connected there, choose Reconnect). No restart needed.
   • Try: "Draft a Teams message to the team that the release moves to Friday"
 DONE

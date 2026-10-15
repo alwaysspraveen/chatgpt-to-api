@@ -41,7 +41,7 @@ git clone https://github.com/alwaysspraveen/chatgpt-to-api.git
 cd chatgpt-to-api && ./install-drafts.bash
 ```
 
-Then reload VS Code and start a new Claude Code session. Requirements: [Claude Code](https://claude.com/claude-code), [uv](https://docs.astral.sh/uv/) and VS Code. Formatted copy works on macOS; elsewhere Copy falls back to plain text. Details: [`chat-mcp/README.md`](chat-mcp/README.md) (the `save_draft` tool) and [`vscode-claude-copy/README.md`](vscode-claude-copy/README.md) (the panel).
+Then reload VS Code. Your **current Claude Code session keeps working**: it picks up the MCP automatically (check with `/mcp`, and choose **Reconnect** if needed). Requirements: [Claude Code](https://claude.com/claude-code), [uv](https://docs.astral.sh/uv/) and VS Code. Formatted copy works on macOS; elsewhere Copy falls back to plain text. Details: [`chat-mcp/README.md`](chat-mcp/README.md) (the `save_draft` tool) and [`vscode-claude-copy/README.md`](vscode-claude-copy/README.md) (the panel).
 
 ---
 

@@ -55,6 +55,8 @@ Restart Claude Desktop afterwards. If Claude Desktop can't find `uv`, use its fu
 
 ---
 
+**Existing sessions:** Claude Code loads a newly registered MCP into sessions that are already open, and the server's own instructions tell Claude to use `save_draft`, so you don't need to restart. Type `/mcp` to confirm **chatgpt-drafts** is connected (choose **Reconnect** if it isn't).
+
 ## Tools
 
 | Tool | What it does | Key inputs |
@@ -107,7 +109,7 @@ To set them for Claude Code: `claude mcp add … -e CHATGPT_BRIDGE_KEY=sk-local-
 | `Bridge error 401` | The key doesn't match `API_KEY` in `server/.env` |
 | `ChatGPT didn't answer within 240s` | Check the ChatGPT tab for a login, captcha or rate-limit message |
 | Tool not listed in Claude | `claude mcp list`; re-add it with the command above, then restart Claude |
-| Claude says it can't access the MCP / `/mcp` shows **chatgpt-drafts ✘ failed** | Usually `uv` isn't on Claude Code's PATH (common when Claude runs from VS Code or the desktop app). Run `git pull && ./install-drafts.bash --force`: it registers the full path to `uv` and checks the server starts. Then start a new Claude session. |
+| Claude says it can't access the MCP / `/mcp` shows **chatgpt-drafts ✘ failed** | Usually `uv` isn't on Claude Code's PATH (common when Claude runs from VS Code or the desktop app). Run `git pull && ./install-drafts.bash --force`: it registers the full path to `uv` and checks the server starts. Then in your current Claude session type `/mcp` and **Reconnect** chatgpt-drafts. No restart needed. |
 
 ## Test locally
 
