@@ -30,7 +30,7 @@ async function copy(text, label, mode) {
   const m = mode ?? config().get('format') ?? 'rich';
   if (m === 'rich') {
     try {
-      await writeRich(toHtml(text), toPlain(text));
+      await writeRich(toHtml(text, { clipboard: true }), toPlain(text));
     } catch {
       await vscode.env.clipboard.writeText(toPlain(text)); // non-macOS / osascript failure
     }

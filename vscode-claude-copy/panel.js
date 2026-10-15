@@ -122,8 +122,15 @@ class ClaudeCopyPanel {
   .body > :last-child { margin-bottom: 0; }
   .body ul, .body ol { margin: 0 0 .55em; padding-left: 1.3em; }
   .body li { margin: .1em 0; }
-  .body pre { white-space: pre-wrap; margin: 0 0 .55em; padding: 6px 8px; border-radius: 4px; background: var(--vscode-textCodeBlock-background); }
-  .body code { font-family: var(--vscode-editor-font-family); font-size: .92em; padding: 0 3px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
+  .body pre { white-space: pre-wrap; margin: 0 0 .55em; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--vscode-descriptionForeground); background: var(--vscode-textCodeBlock-background); }
+  /* Inline values as monospace chips, the way Teams shows them. */
+  .body code {
+    font-family: var(--vscode-editor-font-family); font-size: .92em;
+    padding: 0 4px; border-radius: 4px; white-space: nowrap;
+    border: 1px solid var(--vscode-descriptionForeground);
+    background: var(--vscode-textCodeBlock-background);
+  }
+  .body li code, .body p code { white-space: normal; overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   .body pre code { padding: 0; background: none; }
   .body a { color: var(--vscode-textLink-foreground); }
 

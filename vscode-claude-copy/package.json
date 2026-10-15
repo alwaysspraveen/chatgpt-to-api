@@ -2,7 +2,7 @@
   "name": "drafts-panel",
   "displayName": "Drafts Panel for Claude Code",
   "description": "A side panel of the messages Claude Code drafts for you (Teams, Google Chat, Slack, email), with one-click copy that keeps bold and bullets. Unofficial; not affiliated with Anthropic.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "alwaysspraveen",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -47,7 +47,7 @@
       },
       {
         "command": "claudeCopy.pick",
-        "title": "Pick a Draft to Copy\u2026",
+        "title": "Pick a Draft to Copy…",
         "category": "Drafts Panel"
       },
       {
