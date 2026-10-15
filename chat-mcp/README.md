@@ -107,6 +107,7 @@ To set them for Claude Code: `claude mcp add … -e CHATGPT_BRIDGE_KEY=sk-local-
 | `Bridge error 401` | The key doesn't match `API_KEY` in `server/.env` |
 | `ChatGPT didn't answer within 240s` | Check the ChatGPT tab for a login, captcha or rate-limit message |
 | Tool not listed in Claude | `claude mcp list`; re-add it with the command above, then restart Claude |
+| Claude says it can't access the MCP / `/mcp` shows **chatgpt-drafts ✘ failed** | Usually `uv` isn't on Claude Code's PATH (common when Claude runs from VS Code or the desktop app). Run `git pull && ./install-drafts.bash --force`: it registers the full path to `uv` and checks the server starts. Then start a new Claude session. |
 
 ## Test locally
 

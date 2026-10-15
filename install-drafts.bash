@@ -28,7 +28,8 @@ ok "Claude Code CLI"
 if ! command -v uv >/dev/null; then
   fail "uv not found. Install it with:  curl -LsSf https://astral.sh/uv/install.sh | sh   (then open a new terminal)"
 fi
-ok "uv"
+UV="$(command -v uv)"
+ok "uv ($UV)"
 CODE=""
 for c in code "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
          "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"; do
@@ -41,13 +42,23 @@ done
 echo "1/3  MCP server (save_draft)…"
 (cd "$MCP_DIR" && uv sync -q) || fail "uv sync failed in $MCP_DIR"
 ok "Python dependencies installed"
-if claude mcp get chatgpt-drafts >/dev/null 2>&1 && ! $FORCE; then
+# Register with the absolute path to uv: Claude Code started from VS Code or the
+# desktop app often doesn't have ~/.local/bin on PATH, so a bare "uv" fails to start.
+EXPECTED="$UV --directory $MCP_DIR run server.py"
+CURRENT="$(claude mcp get chatgpt-drafts 2>/dev/null | sed -n 's/^ *Command: *//p;s/^ *Args: *//p' | paste -sd' ' -)"
+if [ "$CURRENT" = "$EXPECTED" ] && ! $FORCE; then
   skip "chatgpt-drafts already registered (use --force to re-register)"
 else
-  $FORCE && claude mcp remove chatgpt-drafts --scope user >/dev/null 2>&1
-  claude mcp add --scope user chatgpt-drafts -- uv --directory "$MCP_DIR" run server.py >/dev/null \
+  claude mcp remove chatgpt-drafts --scope user >/dev/null 2>&1
+  claude mcp add --scope user chatgpt-drafts -- "$UV" --directory "$MCP_DIR" run server.py >/dev/null \
     || fail "claude mcp add failed"
-  ok "Registered chatgpt-drafts with Claude Code (user scope)"
+  ok "Registered chatgpt-drafts with Claude Code (user scope, $UV)"
+fi
+# Prove it starts the way Claude Code will start it (no shell PATH).
+if env -i HOME="$HOME" "$UV" --directory "$MCP_DIR" run python -c "import server" >/dev/null 2>&1; then
+  ok "MCP server starts without your shell's PATH"
+else
+  warn "MCP server failed to start: run  $UV --directory \"$MCP_DIR\" run server.py  to see the error"
 fi
 mkdir -p "$HOME/.claude-copy"
 
