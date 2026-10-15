@@ -95,7 +95,10 @@ CHATGPT_TOOLS = os.environ.get("CHATGPT_TOOLS", "1") != "0"
 SAVE_DRAFT_INSTRUCTIONS = (
     "Whenever you (Claude) write a message for the user to send (Teams, Google Chat, Slack, email), write it "
     "yourself and call save_draft with exactly the final message text, so it appears in the user's Claude Copy "
-    "panel in VS Code. save_draft does not need ChatGPT or any bridge. "
+    "panel in VS Code. save_draft does not need ChatGPT or any bridge. Format the text as Markdown: wrap technical "
+    "values in backticks (project names, account IDs, regions, ARNs, paths, secret/env/config keys, commands, "
+    "hostnames, versions), use **bold** for key points and numbered/bulleted lists; the panel turns these into "
+    "code chips and real formatting when pasted into Teams or Google Chat. "
 )
 CHATGPT_INSTRUCTIONS = (
     "Only if the user explicitly asks for ChatGPT to write it, use the ChatGPT tools (they need the local "
@@ -263,7 +266,7 @@ async def refine_draft(
 
 @mcp.tool(annotations={"title": "Save a draft", "readOnlyHint": False, "destructiveHint": False})
 def save_draft(
-    text: Annotated[str, Field(description="The final message exactly as the user will paste it: no preamble, no quotes, no notes")],
+    text: Annotated[str, Field(description="The final message exactly as the user will paste it: no preamble, no quotes, no notes. Markdown: wrap technical values (project names, account IDs, regions, paths, secret/config keys, commands, hostnames) in `backticks`; use **bold** and lists where helpful.")],
     platform: Annotated[Platform, Field(description="Where it will be pasted")] = "teams",
     title: Annotated[str | None, Field(description="Short label, e.g. 'Leave request to manager'")] = None,
     copy_to_clipboard: Annotated[bool, Field(description="Also put the text on the clipboard (macOS)")] = False,

@@ -118,7 +118,7 @@ else
   cat >> "$CLAUDE_DIR/CLAUDE.md" <<'MD'
 
 ## Drafting messages
-When I ask you to draft/write a message for Teams, Google Chat, Slack or email, write it yourself and save it with the `save_draft` tool (chatgpt-drafts MCP), passing only the final message text, the platform and a short title, so it appears in my Claude Copy panel in VS Code. If the tool isn't available, append one JSON line `{"id", "text", "platform", "title", "created_at"}` to `~/.claude-copy/drafts.jsonl` instead.
+When I ask you to draft/write a message for Teams, Google Chat, Slack or email, write it yourself and save it with the `save_draft` tool (chatgpt-drafts MCP), passing only the final message text, the platform and a short title, so it appears in my Drafts panel in VS Code. Write the text as Markdown: wrap technical values (project names, account IDs, regions, paths, secret/config keys, commands, hostnames) in `backticks` so they paste as code chips, and use **bold** and lists where helpful. If the tool isn't available, append one JSON line `{"id", "text", "platform", "title", "created_at"}` to `~/.claude-copy/drafts.jsonl` instead.
 MD
   ok "Added drafting instruction to ~/.claude/CLAUDE.md"
 fi
