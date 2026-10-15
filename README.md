@@ -45,6 +45,12 @@ This installs **drafts only**: Claude writes the message and `save_draft` saves 
 
 Then reload VS Code. Your **current Claude Code session keeps working**: it picks up the MCP automatically (check with `/mcp`, and choose **Reconnect** if needed). Requirements: [Claude Code](https://claude.com/claude-code), [uv](https://docs.astral.sh/uv/) and VS Code. Formatted copy works on macOS; elsewhere Copy falls back to plain text. Details: [`chat-mcp/README.md`](chat-mcp/README.md) (the `save_draft` tool) and [`vscode-claude-copy/README.md`](vscode-claude-copy/README.md) (the panel, also on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=alwaysspraveen.drafts-panel)).
 
+**Releasing a new version of the extension** (maintainers):
+```bash
+./release-extension.bash patch -m "What changed; another change" --push-as alwaysspraveen
+```
+This bumps the version (`patch` / `minor` / `major` / `X.Y.Z`), updates the changelog, builds the `.vsix` into `vscode-claude-copy/dist/`, opens the Marketplace upload page, and commits and pushes. Add `--publish` to publish from the terminal instead (log in once with `npx @vscode/vsce login alwaysspraveen`). Run `./release-extension.bash --help` for all options.
+
 ---
 
 ## Contents
